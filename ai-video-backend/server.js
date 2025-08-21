@@ -5,7 +5,23 @@ require('dotenv').config();
 
 const app = express();
 const PORT = process.env.PORT || 5001;
+const express = require('express');
+const cors = require('cors');
+const { createClient } = require('@supabase/supabase-js');
+require('dotenv').config();
 
+const app = express();
+const PORT = process.env.PORT || 5001;
+
+// ADD THIS LINE BELOW:
+app.use(cors({
+  origin: ['https://ai-video-studio-frontend.onrender.com', 'http://localhost:3000'],
+  credentials: true
+}));
+
+// Continue with your existing middleware and routes...
+app.use(express.json());
+// ... rest of your code
 // Production-ready CORS configuration
 const corsOptions = {
   origin: process.env.NODE_ENV === 'production' 
