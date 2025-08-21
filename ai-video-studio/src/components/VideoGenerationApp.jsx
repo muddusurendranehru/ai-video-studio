@@ -1,3 +1,4 @@
+import React, { useState, useEffect } from 'react';
 const API_BASE_URL = process.env.NODE_ENV === 'production' 
   ? 'https://ai-video-studio-z4eu.onrender.com/api'
   : 'http://localhost:5001/api';
