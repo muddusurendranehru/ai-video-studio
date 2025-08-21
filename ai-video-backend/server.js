@@ -5,295 +5,157 @@ const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
 const PORT = process.env.PORT || 5001;
-const express = require('express');
-const cors = require('cors');
-const { createClient } = require('@supabase/supabase-js');
-require('dotenv').config();
 
-const app = express();
-const PORT = process.env.PORT || 5001;
-
-<<<<<<< HEAD
-// Environment check
-=======
-// ADD THIS LINE BELOW:
+// CORS configuration - Fixes frontend connection
 app.use(cors({
-  origin: ['https://ai-video-studio-frontend.onrender.com', 'http://localhost:3000'],
-  credentials: true
+  origin: [
+    'https://ai-video-studio-frontend.onrender.com',
+    'http://localhost:3000',
+    'http://localhost:3001'
+  ],
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-// Continue with your existing middleware and routes...
+// Middleware
 app.use(express.json());
-// ... rest of your code
-// Production-ready CORS configuration
-const corsOptions = {
-  origin: process.env.NODE_ENV === 'production' 
-    ? [
-        'https://your-frontend-app.vercel.app', // Replace with your actual frontend URL
-        'https://ai-video-studio.vercel.app',   // Alternative domain
-      ]
-    : [
-        'http://localhost:3000',
-        'http://localhost:5173',
-        'http://127.0.0.1:3000'
-      ],
-  credentials: true,
-  methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-};
-
-app.use(cors(corsOptions));
-app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// Health check for deployment monitoring
+// Supabase client
+const supabaseUrl = process.env.SUPABASE_URL;
+const supabaseKey = process.env.SUPABASE_ANON_KEY;
+const supabase = createClient(supabaseUrl, supabaseKey);
+
+// Root endpoint
 app.get('/', (req, res) => {
-  res.json({
-    service: 'AI Video Studio Backend',
-    status: 'healthy',
+  res.json({ 
+    message: 'AI Video Studio Backend API',
     version: '1.0.0',
-    timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development'
+    status: 'running',
+    timestamp: new Date().toISOString()
   });
 });
 
-// Configuration
-const VIDEO_GENERATION_MODE = process.env.VIDEO_MODE || 'SMART_MOCK';
-
-// Environment validation
-const requiredEnvVars = ['SUPABASE_URL', 'SUPABASE_ANON_KEY'];
-const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
-
-if (missingVars.length > 0) {
-  console.error('❌ Missing required environment variables:', missingVars);
-  process.exit(1);
-}
-
->>>>>>> 3d3b8faf5173eaafada106edb94f9492d79a238e
-console.log('🔍 Environment Check:');
-console.log('NODE_ENV:', process.env.NODE_ENV || 'development');
-console.log('PORT:', PORT);
-console.log('VIDEO_MODE:', process.env.VIDEO_MODE || 'SMART_MOCK');
-console.log('SUPABASE_URL:', process.env.SUPABASE_URL ? '✅ Configured' : '❌ Missing');
-console.log('SUPABASE_ANON_KEY:', process.env.SUPABASE_ANON_KEY ? '✅ Configured' : '❌ Missing');
-
-// Supabase client
-const supabase = createClient(
-  process.env.SUPABASE_URL,
-  process.env.SUPABASE_ANON_KEY
-);
-console.log('✅ Supabase client initialized');
-
-// Middleware
-app.use(cors());
-app.use(express.json());
-
-// Sample video data for smart mock
-const SAMPLE_VIDEOS = [
-  {
-    id: 'vid_001',
-    title: 'Corporate Product Launch',
-    description: 'Professional product demonstration with sleek animations',
-    duration: 45,
-    status: 'completed',
-    created_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-    video_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
-    thumbnail_url: 'https://via.placeholder.com/320x180/4F46E5/white?text=Product+Launch'
-  },
-  {
-    id: 'vid_002',
-    title: 'Educational Tutorial Series',
-    description: 'Step-by-step learning content with interactive elements',
-    duration: 120,
-    status: 'completed',
-    created_at: new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(),
-    video_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
-    thumbnail_url: 'https://via.placeholder.com/320x180/059669/white?text=Tutorial+Series'
-  },
-  {
-    id: 'vid_003',
-    title: 'Social Media Campaign',
-    description: 'Dynamic social content with trending animations',
-    duration: 30,
-    status: 'completed',
-    created_at: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
-    video_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
-    thumbnail_url: 'https://via.placeholder.com/320x180/DC2626/white?text=Social+Campaign'
-  },
-  {
-    id: 'vid_004',
-    title: 'Event Highlights Reel',
-    description: 'Conference highlights with professional editing',
-    duration: 90,
-    status: 'completed',
-    created_at: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
-    video_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
-    thumbnail_url: 'https://via.placeholder.com/320x180/7C3AED/white?text=Event+Highlights'
-  }
-];
-
-// Routes
+// Health check endpoint
 app.get('/api/health', (req, res) => {
   res.json({ 
     status: 'healthy', 
     timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development',
-    video_mode: process.env.VIDEO_MODE || 'SMART_MOCK'
+    message: 'AI Video Studio Backend is running!',
+    cors: 'configured',
+    environment: process.env.NODE_ENV || 'development'
   });
 });
 
 // Get all videos
 app.get('/api/videos', async (req, res) => {
   try {
-    if (process.env.VIDEO_MODE === 'SMART_MOCK') {
-      // Return sample videos in smart mock mode
-      res.json({
-        success: true,
-        data: SAMPLE_VIDEOS,
-        count: SAMPLE_VIDEOS.length
-      });
-    } else {
-      // Real database query
-      const { data, error } = await supabase
-        .from('videos')
-        .select('*')
-        .order('created_at', { ascending: false });
+    const { data: videos, error } = await supabase
+      .from('videos')
+      .select('*')
+      .order('created_at', { ascending: false });
 
-      if (error) {
-        throw error;
-      }
-
-      res.json({
-        success: true,
-        data: data || [],
-        count: data?.length || 0
-      });
+    if (error) {
+      console.error('Supabase error:', error);
+      return res.status(500).json({ error: 'Failed to fetch videos' });
     }
+
+    res.json(videos || []);
   } catch (error) {
-    console.error('Error fetching videos:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch videos',
-      details: error.message
-    });
+    console.error('Server error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// Create new video
-app.post('/api/videos', async (req, res) => {
+// Generate new video
+app.post('/api/generate', async (req, res) => {
   try {
-    const { title, description } = req.body;
-    
-    if (!title || !description) {
-      return res.status(400).json({
-        success: false,
-        error: 'Title and description are required'
-      });
+    const { prompt, style = 'cinematic', duration = 5 } = req.body;
+
+    if (!prompt || prompt.trim() === '') {
+      return res.status(400).json({ error: 'Prompt is required' });
     }
 
-    if (process.env.VIDEO_MODE === 'SMART_MOCK') {
-      // Smart mock: Create realistic video with processing simulation
-      const newVideo = {
-        id: `vid_${Date.now()}`,
-        title,
-        description,
-        duration: Math.floor(Math.random() * 120) + 30, // 30-150 seconds
-        status: 'processing',
-        created_at: new Date().toISOString(),
-        video_url: null,
-        thumbnail_url: `https://via.placeholder.com/320x180/6366F1/white?text=${encodeURIComponent(title.substring(0, 20))}`
-      };
+    // Create video record with generating status
+    const videoData = {
+      id: `video_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      prompt: prompt.trim(),
+      style,
+      duration: parseInt(duration),
+      status: 'generating',
+      progress: 0,
+      created_at: new Date().toISOString(),
+      video_url: null,
+      thumbnail_url: `https://picsum.photos/400/300?random=${Date.now()}`
+    };
 
-      // Simulate processing time
-      setTimeout(async () => {
-        // Update status to completed (in real app, this would update database)
-        console.log(`✅ Video "${title}" processing completed`);
-      }, 5000);
+    // Save to Supabase
+    const { data, error } = await supabase
+      .from('videos')
+      .insert([videoData])
+      .select()
+      .single();
 
-      res.status(201).json({
-        success: true,
-        data: newVideo,
-        message: 'Video generation started'
-      });
-    } else {
-      // Real database insertion
-      const { data, error } = await supabase
-        .from('videos')
-        .insert([{ 
-          title, 
-          description, 
-          status: 'processing',
-          created_at: new Date().toISOString()
-        }])
-        .select()
-        .single();
+    if (error) {
+      console.error('Supabase insert error:', error);
+      return res.status(500).json({ error: 'Failed to save video' });
+    }
 
-      if (error) {
-        throw error;
+    // Simulate video generation process
+    setTimeout(async () => {
+      try {
+        await supabase
+          .from('videos')
+          .update({ 
+            status: 'processing',
+            progress: 50
+          })
+          .eq('id', data.id);
+
+        // Complete the video after another delay
+        setTimeout(async () => {
+          await supabase
+            .from('videos')
+            .update({ 
+              status: 'completed',
+              progress: 100,
+              video_url: `https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4`
+            })
+            .eq('id', data.id);
+        }, 3000);
+      } catch (error) {
+        console.error('Update error:', error);
       }
+    }, 2000);
 
-      res.status(201).json({
-        success: true,
-        data,
-        message: 'Video created successfully'
-      });
-    }
+    res.json(data);
   } catch (error) {
-    console.error('Error creating video:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to create video',
-      details: error.message
-    });
+    console.error('Video generation error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// Get single video
+// Get video by ID
 app.get('/api/videos/:id', async (req, res) => {
   try {
     const { id } = req.params;
+    
+    const { data: video, error } = await supabase
+      .from('videos')
+      .select('*')
+      .eq('id', id)
+      .single();
 
-    if (process.env.VIDEO_MODE === 'SMART_MOCK') {
-      const video = SAMPLE_VIDEOS.find(v => v.id === id);
-      if (!video) {
-        return res.status(404).json({
-          success: false,
-          error: 'Video not found'
-        });
-      }
-      res.json({
-        success: true,
-        data: video
-      });
-    } else {
-      const { data, error } = await supabase
-        .from('videos')
-        .select('*')
-        .eq('id', id)
-        .single();
-
-      if (error) {
-        if (error.code === 'PGRST116') {
-          return res.status(404).json({
-            success: false,
-            error: 'Video not found'
-          });
-        }
-        throw error;
-      }
-
-      res.json({
-        success: true,
-        data
-      });
+    if (error) {
+      console.error('Get video error:', error);
+      return res.status(404).json({ error: 'Video not found' });
     }
+
+    res.json(video);
   } catch (error) {
-    console.error('Error fetching video:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch video',
-      details: error.message
-    });
+    console.error('Server error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -301,72 +163,82 @@ app.get('/api/videos/:id', async (req, res) => {
 app.delete('/api/videos/:id', async (req, res) => {
   try {
     const { id } = req.params;
+    
+    const { error } = await supabase
+      .from('videos')
+      .delete()
+      .eq('id', id);
 
-    if (process.env.VIDEO_MODE === 'SMART_MOCK') {
-      // In mock mode, just return success
-      res.json({
-        success: true,
-        message: 'Video deleted successfully'
-      });
-    } else {
-      const { error } = await supabase
-        .from('videos')
-        .delete()
-        .eq('id', id);
-
-      if (error) {
-        throw error;
-      }
-
-      res.json({
-        success: true,
-        message: 'Video deleted successfully'
-      });
+    if (error) {
+      console.error('Delete error:', error);
+      return res.status(500).json({ error: 'Failed to delete video' });
     }
+
+    res.json({ message: 'Video deleted successfully' });
   } catch (error) {
-    console.error('Error deleting video:', error);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to delete video',
-      details: error.message
-    });
+    console.error('Delete video error:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error('Unhandled error:', err);
-  res.status(500).json({
-    success: false,
-    error: 'Internal server error',
-    details: process.env.NODE_ENV === 'development' ? err.message : undefined
+// Update video status (for real-time updates)
+app.patch('/api/videos/:id/status', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status, progress, video_url } = req.body;
+    
+    const updateData = { status };
+    if (progress !== undefined) updateData.progress = progress;
+    if (video_url) updateData.video_url = video_url;
+
+    const { data, error } = await supabase
+      .from('videos')
+      .update(updateData)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      return res.status(500).json({ error: 'Failed to update video status' });
+    }
+
+    res.json(data);
+  } catch (error) {
+    console.error('Status update error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// 404 handler for unknown routes
+app.use('*', (req, res) => {
+  res.status(404).json({ 
+    error: 'Route not found',
+    message: `Cannot ${req.method} ${req.originalUrl}`,
+    availableRoutes: [
+      'GET /',
+      'GET /api/health',
+      'GET /api/videos',
+      'POST /api/generate',
+      'GET /api/videos/:id',
+      'DELETE /api/videos/:id'
+    ]
   });
 });
 
-// 404 handler
-app.use('*', (req, res) => {
-  res.status(404).json({
-    success: false,
-    error: 'Route not found',
-    path: req.originalUrl
+// Global error handler
+app.use((error, req, res, next) => {
+  console.error('Global error:', error);
+  res.status(500).json({ 
+    error: 'Something went wrong!',
+    message: error.message 
   });
 });
 
 // Start server
 app.listen(PORT, () => {
-  console.log(`\n🚀 AI Video Studio Backend`);
-  console.log(`📡 Server running on port ${PORT}`);
-<<<<<<< HEAD
-  console.log(`🌐 Health check: http://localhost:${PORT}/api/health`);
-  console.log(`📝 Mode: ${process.env.VIDEO_MODE || 'SMART_MOCK'}`);
-  console.log(`⏰ Started at: ${new Date().toLocaleString()}\n`);
+  console.log(`🚀 AI Video Studio Backend running on port ${PORT}`);
+  console.log(`📡 Health check: http://localhost:${PORT}/api/health`);
+  console.log(`🎬 Frontend allowed: https://ai-video-studio-frontend.onrender.com`);
+  console.log(`🔧 Environment: ${process.env.NODE_ENV || 'development'}`);
 });
 
-module.exports = app;
-=======
-  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🎬 Video Mode: ${VIDEO_GENERATION_MODE}`);
-  console.log(`🔗 Health: http://localhost:${PORT}/api/health`);
-  console.log(`✅ Ready for deployment!`);
-});
->>>>>>> 3d3b8faf5173eaafada106edb94f9492d79a238e
