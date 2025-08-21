@@ -4,7 +4,7 @@ import React, { useState, useEffect } from 'react';
 
 // Production-ready API URL configuration
 const API_BASE_URL = process.env.NODE_ENV === 'production' 
- ? 'https://ai-video-studio-backend.onrender.com/api'
+ ?'https://ai-video-studio-backend.onrender.com/api'
   : 'http://localhost:5001/api';
 
 const VideoGenerationApp = () => {
