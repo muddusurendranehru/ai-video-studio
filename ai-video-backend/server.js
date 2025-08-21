@@ -33,7 +33,15 @@ app.get('/', (req, res) => {
     message: 'AI Video Studio Backend API',
     version: '1.0.0',
     status: 'running',
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    endpoints: [
+      'GET /',
+      'GET /api/health',
+      'GET /api/videos',
+      'POST /api/generate',
+      'GET /api/videos/:id',
+      'DELETE /api/videos/:id'
+    ]
   });
 });
 
@@ -44,51 +52,79 @@ app.get('/api/health', (req, res) => {
     timestamp: new Date().toISOString(),
     message: 'AI Video Studio Backend is running!',
     cors: 'configured',
-    environment: process.env.NODE_ENV || 'development'
+    environment: process.env.NODE_ENV || 'development',
+    supabase: supabaseUrl ? 'configured' : 'missing'
   });
 });
 
 // Get all videos
 app.get('/api/videos', async (req, res) => {
   try {
+    console.log('📹 Fetching videos from Supabase...');
+    
     const { data: videos, error } = await supabase
       .from('videos')
       .select('*')
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('Supabase error:', error);
-      return res.status(500).json({ error: 'Failed to fetch videos' });
+      console.error('❌ Supabase error:', error);
+      return res.status(500).json({ 
+        error: 'Failed to fetch videos',
+        details: error.message 
+      });
     }
 
+    console.log(`✅ Successfully fetched ${videos?.length || 0} videos`);
     res.json(videos || []);
   } catch (error) {
-    console.error('Server error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('❌ Server error in /api/videos:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      details: error.message 
+    });
   }
 });
 
 // Generate new video
 app.post('/api/generate', async (req, res) => {
   try {
+    console.log('🎬 Generate video request received:', req.body);
+    
     const { prompt, style = 'cinematic', duration = 5 } = req.body;
 
+    // Validate input
     if (!prompt || prompt.trim() === '') {
+      console.log('❌ Missing prompt');
       return res.status(400).json({ error: 'Prompt is required' });
     }
 
-    // Create video record with generating status
+    if (prompt.trim().length < 5) {
+      console.log('❌ Prompt too short');
+      return res.status(400).json({ error: 'Prompt must be at least 5 characters' });
+    }
+
+    // Create video record
     const videoData = {
       id: `video_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
       prompt: prompt.trim(),
-      style,
-      duration: parseInt(duration),
+      title: prompt.trim().substring(0, 50) + (prompt.length > 50 ? '...' : ''),
+      style: style,
+      duration: parseInt(duration) || 5,
       status: 'generating',
       progress: 0,
       created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
       video_url: null,
-      thumbnail_url: `https://picsum.photos/400/300?random=${Date.now()}`
+      thumbnail_url: `https://via.placeholder.com/400x300/667eea/ffffff?text=${encodeURIComponent(prompt.substring(0, 20))}`,
+      runway_model: 'smart_mock',
+      metadata: {
+        generation_mode: 'SMART_MOCK',
+        mock_thumbnail: `https://via.placeholder.com/400x300/667eea/ffffff?text=${encodeURIComponent(prompt.substring(0, 20))}`
+      }
     };
+
+    console.log('💾 Saving video to Supabase:', videoData.id);
 
     // Save to Supabase
     const { data, error } = await supabase
@@ -98,41 +134,59 @@ app.post('/api/generate', async (req, res) => {
       .single();
 
     if (error) {
-      console.error('Supabase insert error:', error);
-      return res.status(500).json({ error: 'Failed to save video' });
+      console.error('❌ Supabase insert error:', error);
+      return res.status(500).json({ 
+        error: 'Failed to save video to database',
+        details: error.message 
+      });
     }
+
+    console.log('✅ Video saved successfully:', data.id);
 
     // Simulate video generation process
     setTimeout(async () => {
       try {
+        console.log('⚙️ Updating video to processing...');
         await supabase
           .from('videos')
           .update({ 
             status: 'processing',
-            progress: 50
+            progress: 50,
+            updated_at: new Date().toISOString()
           })
           .eq('id', data.id);
 
         // Complete the video after another delay
         setTimeout(async () => {
-          await supabase
-            .from('videos')
-            .update({ 
-              status: 'completed',
-              progress: 100,
-              video_url: `https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4`
-            })
-            .eq('id', data.id);
-        }, 3000);
+          try {
+            console.log('✅ Completing video generation...');
+            await supabase
+              .from('videos')
+              .update({ 
+                status: 'completed',
+                progress: 100,
+                video_url: `https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4`,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', data.id);
+            console.log('🎉 Video generation completed:', data.id);
+          } catch (error) {
+            console.error('❌ Error completing video:', error);
+          }
+        }, 5000);
       } catch (error) {
-        console.error('Update error:', error);
+        console.error('❌ Error updating video progress:', error);
       }
-    }, 2000);
+    }, 3000);
 
+    // Return immediate response
     res.json(data);
   } catch (error) {
-    console.error('Video generation error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('❌ Video generation error:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      details: error.message 
+    });
   }
 });
 
@@ -140,6 +194,7 @@ app.post('/api/generate', async (req, res) => {
 app.get('/api/videos/:id', async (req, res) => {
   try {
     const { id } = req.params;
+    console.log('🔍 Fetching video by ID:', id);
     
     const { data: video, error } = await supabase
       .from('videos')
@@ -148,14 +203,21 @@ app.get('/api/videos/:id', async (req, res) => {
       .single();
 
     if (error) {
-      console.error('Get video error:', error);
-      return res.status(404).json({ error: 'Video not found' });
+      console.error('❌ Video not found:', error);
+      return res.status(404).json({ 
+        error: 'Video not found',
+        details: error.message 
+      });
     }
 
+    console.log('✅ Video found:', video.id);
     res.json(video);
   } catch (error) {
-    console.error('Server error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('❌ Get video error:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      details: error.message 
+    });
   }
 });
 
@@ -163,6 +225,7 @@ app.get('/api/videos/:id', async (req, res) => {
 app.delete('/api/videos/:id', async (req, res) => {
   try {
     const { id } = req.params;
+    console.log('🗑️ Deleting video:', id);
     
     const { error } = await supabase
       .from('videos')
@@ -170,14 +233,21 @@ app.delete('/api/videos/:id', async (req, res) => {
       .eq('id', id);
 
     if (error) {
-      console.error('Delete error:', error);
-      return res.status(500).json({ error: 'Failed to delete video' });
+      console.error('❌ Delete error:', error);
+      return res.status(500).json({ 
+        error: 'Failed to delete video',
+        details: error.message 
+      });
     }
 
+    console.log('✅ Video deleted:', id);
     res.json({ message: 'Video deleted successfully' });
   } catch (error) {
-    console.error('Delete video error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('❌ Delete video error:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      details: error.message 
+    });
   }
 });
 
@@ -187,7 +257,12 @@ app.patch('/api/videos/:id/status', async (req, res) => {
     const { id } = req.params;
     const { status, progress, video_url } = req.body;
     
-    const updateData = { status };
+    console.log('🔄 Updating video status:', id, status);
+    
+    const updateData = { 
+      status,
+      updated_at: new Date().toISOString()
+    };
     if (progress !== undefined) updateData.progress = progress;
     if (video_url) updateData.video_url = video_url;
 
@@ -199,18 +274,27 @@ app.patch('/api/videos/:id/status', async (req, res) => {
       .single();
 
     if (error) {
-      return res.status(500).json({ error: 'Failed to update video status' });
+      console.error('❌ Status update error:', error);
+      return res.status(500).json({ 
+        error: 'Failed to update video status',
+        details: error.message 
+      });
     }
 
+    console.log('✅ Status updated:', data.id);
     res.json(data);
   } catch (error) {
-    console.error('Status update error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    console.error('❌ Status update error:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      details: error.message 
+    });
   }
 });
 
 // 404 handler for unknown routes
 app.use('*', (req, res) => {
+  console.log('❌ 404 - Route not found:', req.method, req.originalUrl);
   res.status(404).json({ 
     error: 'Route not found',
     message: `Cannot ${req.method} ${req.originalUrl}`,
@@ -227,10 +311,11 @@ app.use('*', (req, res) => {
 
 // Global error handler
 app.use((error, req, res, next) => {
-  console.error('Global error:', error);
+  console.error('🚨 Global error:', error);
   res.status(500).json({ 
     error: 'Something went wrong!',
-    message: error.message 
+    message: error.message,
+    timestamp: new Date().toISOString()
   });
 });
 
@@ -240,5 +325,6 @@ app.listen(PORT, () => {
   console.log(`📡 Health check: http://localhost:${PORT}/api/health`);
   console.log(`🎬 Frontend allowed: https://ai-video-studio-frontend.onrender.com`);
   console.log(`🔧 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`💾 Supabase: ${supabaseUrl ? 'Connected' : 'Not configured'}`);
 });
 
