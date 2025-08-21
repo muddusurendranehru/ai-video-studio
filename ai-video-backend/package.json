@@ -19,10 +19,10 @@
   "author": "Your Name",
   "license": "MIT",
   "dependencies": {
-    "express": "^4.18.2",
+    "@supabase/supabase-js": "^2.55.0",
     "cors": "^2.8.5",
-    "@supabase/supabase-js": "^2.39.0",
-    "dotenv": "^16.3.1"
+    "dotenv": "^16.6.1",
+    "express": "^4.21.2"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"
@@ -33,7 +33,10 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/yourusername/ai-video-studio.git"
+    "url": "git+https://github.com/yourusername/ai-video-studio.git"
   },
-  "homepage": "https://github.com/yourusername/ai-video-studio#readme"
+  "homepage": "https://github.com/yourusername/ai-video-studio#readme",
+  "bugs": {
+    "url": "https://github.com/yourusername/ai-video-studio/issues"
+  }
 }
