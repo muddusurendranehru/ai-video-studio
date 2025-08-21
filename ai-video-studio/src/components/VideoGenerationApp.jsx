@@ -1,10 +1,5 @@
-// Update your VideoGenerationApp.jsx to use environment-based API URL
-
-import React, { useState, useEffect } from 'react';
-
-// Production-ready API URL configuration
 const API_BASE_URL = process.env.NODE_ENV === 'production' 
-  ? 'https://your-backend-app.onrender.com/api'  // Replace with your actual Render URL
+  ? 'https://ai-video-studio-z4eu.onrender.com/api'
   : 'http://localhost:5001/api';
 
 const VideoGenerationApp = () => {

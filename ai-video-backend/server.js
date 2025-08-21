@@ -5,8 +5,71 @@ const { createClient } = require('@supabase/supabase-js');
 
 const app = express();
 const PORT = process.env.PORT || 5001;
+const express = require('express');
+const cors = require('cors');
+const { createClient } = require('@supabase/supabase-js');
+require('dotenv').config();
 
+const app = express();
+const PORT = process.env.PORT || 5001;
+
+<<<<<<< HEAD
 // Environment check
+=======
+// ADD THIS LINE BELOW:
+app.use(cors({
+  origin: ['https://ai-video-studio-frontend.onrender.com', 'http://localhost:3000'],
+  credentials: true
+}));
+
+// Continue with your existing middleware and routes...
+app.use(express.json());
+// ... rest of your code
+// Production-ready CORS configuration
+const corsOptions = {
+  origin: process.env.NODE_ENV === 'production' 
+    ? [
+        'https://your-frontend-app.vercel.app', // Replace with your actual frontend URL
+        'https://ai-video-studio.vercel.app',   // Alternative domain
+      ]
+    : [
+        'http://localhost:3000',
+        'http://localhost:5173',
+        'http://127.0.0.1:3000'
+      ],
+  credentials: true,
+  methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+};
+
+app.use(cors(corsOptions));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
+
+// Health check for deployment monitoring
+app.get('/', (req, res) => {
+  res.json({
+    service: 'AI Video Studio Backend',
+    status: 'healthy',
+    version: '1.0.0',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
+
+// Configuration
+const VIDEO_GENERATION_MODE = process.env.VIDEO_MODE || 'SMART_MOCK';
+
+// Environment validation
+const requiredEnvVars = ['SUPABASE_URL', 'SUPABASE_ANON_KEY'];
+const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
+
+if (missingVars.length > 0) {
+  console.error('❌ Missing required environment variables:', missingVars);
+  process.exit(1);
+}
+
+>>>>>>> 3d3b8faf5173eaafada106edb94f9492d79a238e
 console.log('🔍 Environment Check:');
 console.log('NODE_ENV:', process.env.NODE_ENV || 'development');
 console.log('PORT:', PORT);
@@ -293,9 +356,17 @@ app.use('*', (req, res) => {
 app.listen(PORT, () => {
   console.log(`\n🚀 AI Video Studio Backend`);
   console.log(`📡 Server running on port ${PORT}`);
+<<<<<<< HEAD
   console.log(`🌐 Health check: http://localhost:${PORT}/api/health`);
   console.log(`📝 Mode: ${process.env.VIDEO_MODE || 'SMART_MOCK'}`);
   console.log(`⏰ Started at: ${new Date().toLocaleString()}\n`);
 });
 
 module.exports = app;
+=======
+  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🎬 Video Mode: ${VIDEO_GENERATION_MODE}`);
+  console.log(`🔗 Health: http://localhost:${PORT}/api/health`);
+  console.log(`✅ Ready for deployment!`);
+});
+>>>>>>> 3d3b8faf5173eaafada106edb94f9492d79a238e
