@@ -27,13 +27,131 @@ const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
+// Mock video library for variety - NO MORE BUGS BUNNY ONLY!
+const MOCK_VIDEOS = [
+  {
+    url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+    keywords: ['bunny', 'rabbit', 'animal', 'cute', 'forest', 'nature']
+  },
+  {
+    url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
+    keywords: ['elephant', 'dream', 'surreal', 'abstract', 'fantasy', 'imagination']
+  },
+  {
+    url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
+    keywords: ['fire', 'flames', 'blaze', 'action', 'intense', 'dramatic']
+  },
+  {
+    url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
+    keywords: ['escape', 'adventure', 'travel', 'journey', 'exploration', 'outdoors']
+  },
+  {
+    url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4',
+    keywords: ['fun', 'entertainment', 'colorful', 'vibrant', 'celebration', 'joy']
+  },
+  {
+    url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4',
+    keywords: ['ride', 'car', 'speed', 'fast', 'racing', 'vehicle', 'motion']
+  },
+  {
+    url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4',
+    keywords: ['meltdown', 'destruction', 'chaos', 'intense', 'explosive', 'dramatic']
+  },
+  {
+    url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4',
+    keywords: ['dragon', 'fantasy', 'magical', 'medieval', 'creature', 'mystical', 'adventure']
+  },
+  {
+    url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/SubaruOutbackOnStreetAndDirt.mp4',
+    keywords: ['car', 'vehicle', 'road', 'driving', 'outdoor', 'adventure', 'travel']
+  },
+  {
+    url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4',
+    keywords: ['steel', 'metal', 'industrial', 'futuristic', 'technology', 'sci-fi']
+  }
+];
+
+// Smart video selection based on prompt keywords
+const selectVideoByPrompt = (prompt) => {
+  const promptLower = prompt.toLowerCase();
+  
+  // Find the best matching video based on keywords
+  let bestMatch = MOCK_VIDEOS[0]; // Default fallback
+  let bestScore = 0;
+  
+  for (const video of MOCK_VIDEOS) {
+    let score = 0;
+    
+    // Check how many keywords match the prompt
+    for (const keyword of video.keywords) {
+      if (promptLower.includes(keyword)) {
+        score += 1;
+      }
+    }
+    
+    // Special scoring for common words
+    if (promptLower.includes('dragon') || promptLower.includes('phoenix') || promptLower.includes('magical')) {
+      if (video.keywords.includes('dragon') || video.keywords.includes('fantasy')) {
+        score += 5;
+      }
+    }
+    
+    if (promptLower.includes('fire') || promptLower.includes('flame') || promptLower.includes('burning')) {
+      if (video.keywords.includes('fire') || video.keywords.includes('blaze')) {
+        score += 5;
+      }
+    }
+    
+    if (promptLower.includes('car') || promptLower.includes('drive') || promptLower.includes('road')) {
+      if (video.keywords.includes('car') || video.keywords.includes('vehicle')) {
+        score += 5;
+      }
+    }
+    
+    if (promptLower.includes('medical') || promptLower.includes('doctor') || promptLower.includes('health')) {
+      if (video.keywords.includes('abstract') || video.keywords.includes('sci-fi')) {
+        score += 3;
+      }
+    }
+    
+    if (score > bestScore) {
+      bestScore = score;
+      bestMatch = video;
+    }
+  }
+  
+  // If no keywords match, select randomly to avoid always showing the same video
+  if (bestScore === 0) {
+    const randomIndex = Math.floor(Math.random() * MOCK_VIDEOS.length);
+    bestMatch = MOCK_VIDEOS[randomIndex];
+  }
+  
+  console.log(`🎯 Selected video for prompt "${prompt.substring(0, 50)}...": ${bestMatch.url.split('/').pop()} (score: ${bestScore})`);
+  return bestMatch.url;
+};
+
+// Generate smart thumbnail based on prompt
+const generateSmartThumbnail = (prompt) => {
+  const colors = [
+    '667eea', '764ba2', 'f093fb', 'f5576c', 
+    '4facfe', '00f2fe', 'a8edea', 'fed6e3',
+    'ffecd2', 'fcb69f', 'feca57', 'ff9ff3'
+  ];
+  
+  const randomColor = colors[Math.floor(Math.random() * colors.length)];
+  const shortPrompt = prompt.substring(0, 30).replace(/[^a-zA-Z0-9\s]/g, '');
+  
+  return `https://via.placeholder.com/400x300/${randomColor}/ffffff?text=${encodeURIComponent(shortPrompt)}`;
+};
+
 // Root endpoint
 app.get('/', (req, res) => {
   res.json({ 
     message: 'AI Video Studio Backend API',
     version: '1.0.0',
     status: 'running',
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
+    mock_videos: MOCK_VIDEOS.length
   });
 });
 
@@ -44,7 +162,8 @@ app.get('/api/health', (req, res) => {
     timestamp: new Date().toISOString(),
     message: 'AI Video Studio Backend is running!',
     cors: 'configured',
-    environment: process.env.NODE_ENV || 'development'
+    environment: process.env.NODE_ENV || 'development',
+    available_mock_videos: MOCK_VIDEOS.length
   });
 });
 
@@ -77,7 +196,7 @@ app.get('/api/videos', async (req, res) => {
   }
 });
 
-// Generate new video - FIXED FOR UUID SCHEMA
+// Generate new video - WITH SMART VIDEO SELECTION
 app.post('/api/generate', async (req, res) => {
   try {
     console.log('🎬 Generate video request received:', req.body);
@@ -95,28 +214,26 @@ app.post('/api/generate', async (req, res) => {
       return res.status(400).json({ error: 'Prompt must be at least 5 characters' });
     }
 
-    // Create video record - LET SUPABASE GENERATE UUID
+    // Create video record with smart video selection
     const videoData = {
-      // Don't specify id - let Supabase auto-generate UUID
-      title: prompt.trim().substring(0, 100), // Limit to 100 chars
+      title: prompt.trim().substring(0, 100),
       prompt: prompt.trim(),
       style: style,
       duration: parseInt(duration) || 10,
       status: 'generating',
       progress: 0,
       video_url: null,
-      thumbnail_url: `https://via.placeholder.com/400x300/667eea/ffffff?text=${encodeURIComponent(prompt.substring(0, 20))}`,
+      thumbnail_url: generateSmartThumbnail(prompt.trim()),
       runway_model: 'smart_mock',
       metadata: {
         generation_mode: 'SMART_MOCK',
-        frontend_request: true
+        prompt_analysis: 'keyword_matching'
       }
-      // created_at and updated_at will auto-populate from defaults
     };
 
     console.log('💾 Saving video to Supabase...');
 
-    // Save to Supabase - let it generate UUID
+    // Save to Supabase
     const { data, error } = await supabase
       .from('videos')
       .insert([videoData])
@@ -133,7 +250,7 @@ app.post('/api/generate', async (req, res) => {
 
     console.log('✅ Video saved successfully with UUID:', data.id);
 
-    // Simulate video generation process using the generated UUID
+    // Smart video generation process
     setTimeout(async () => {
       try {
         console.log('⚙️ Updating video to processing...', data.id);
@@ -145,19 +262,22 @@ app.post('/api/generate', async (req, res) => {
           })
           .eq('id', data.id);
 
-        // Complete the video after another delay
+        // Complete with smart video selection
         setTimeout(async () => {
           try {
-            console.log('✅ Completing video generation...', data.id);
+            console.log('🎯 Selecting appropriate video for prompt...');
+            const selectedVideoUrl = selectVideoByPrompt(prompt.trim());
+            
+            console.log('✅ Completing video generation with selected video...', data.id);
             await supabase
               .from('videos')
               .update({ 
                 status: 'completed',
                 progress: 100,
-                video_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4'
+                video_url: selectedVideoUrl
               })
               .eq('id', data.id);
-            console.log('🎉 Video generation completed:', data.id);
+            console.log('🎉 Video generation completed with URL:', selectedVideoUrl);
           } catch (error) {
             console.error('❌ Error completing video:', error);
           }
@@ -167,7 +287,7 @@ app.post('/api/generate', async (req, res) => {
       }
     }, 3000);
 
-    // Return immediate response with generated UUID
+    // Return immediate response
     res.json(data);
   } catch (error) {
     console.error('❌ Video generation error:', error);
@@ -277,6 +397,18 @@ app.patch('/api/videos/:id/status', async (req, res) => {
   }
 });
 
+// Get available mock videos (for testing)
+app.get('/api/mock-videos', (req, res) => {
+  res.json({
+    total: MOCK_VIDEOS.length,
+    videos: MOCK_VIDEOS.map(v => ({
+      url: v.url,
+      name: v.url.split('/').pop(),
+      keywords: v.keywords
+    }))
+  });
+});
+
 // 404 handler
 app.use('*', (req, res) => {
   res.status(404).json({ 
@@ -299,7 +431,7 @@ app.listen(PORT, () => {
   console.log(`🚀 AI Video Studio Backend running on port ${PORT}`);
   console.log(`📡 Health check: http://localhost:${PORT}/api/health`);
   console.log(`🎬 Frontend allowed: https://ai-video-studio-frontend.onrender.com`);
+  console.log(`🎯 Mock videos available: ${MOCK_VIDEOS.length}`);
   console.log(`🔧 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`💾 Supabase: ${supabaseUrl ? 'Connected' : 'Not configured'}`);
 });
 
