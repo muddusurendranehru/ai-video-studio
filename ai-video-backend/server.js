@@ -1,239 +1,191 @@
-require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
+const path = require('path');
+const fs = require('fs');
+require('dotenv').config();
 
 const app = express();
-const PORT = process.env.PORT || 5001;
+const PORT = process.env.PORT || 5000;
 
-// CORS configuration
-app.use(cors({
-  origin: [
-    'https://ai-video-studio-frontend.onrender.com',
-    'http://localhost:3000',
-    'http://localhost:3001'
-  ],
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
+// Environment variables validation
+const requiredEnvVars = ['SUPABASE_URL', 'SUPABASE_ANON_KEY'];
+const missingEnvVars = requiredEnvVars.filter(envVar => !process.env[envVar]);
 
-// Middleware
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+if (missingEnvVars.length > 0) {
+  console.error('Missing required environment variables:', missingEnvVars);
+  process.exit(1);
+}
 
 // Supabase client
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseKey = process.env.SUPABASE_ANON_KEY;
-const supabase = createClient(supabaseUrl, supabaseKey);
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_ANON_KEY
+);
 
-// Mock video library for variety - NO MORE BUGS BUNNY ONLY!
-const MOCK_VIDEOS = [
-  {
-    url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
-    keywords: ['bunny', 'rabbit', 'animal', 'cute', 'forest', 'nature']
-  },
-  {
-    url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4',
-    keywords: ['elephant', 'dream', 'surreal', 'abstract', 'fantasy', 'imagination']
-  },
-  {
-    url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
-    keywords: ['fire', 'flames', 'blaze', 'action', 'intense', 'dramatic']
-  },
-  {
-    url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4',
-    keywords: ['escape', 'adventure', 'travel', 'journey', 'exploration', 'outdoors']
-  },
-  {
-    url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4',
-    keywords: ['fun', 'entertainment', 'colorful', 'vibrant', 'celebration', 'joy']
-  },
-  {
-    url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoyrides.mp4',
-    keywords: ['ride', 'car', 'speed', 'fast', 'racing', 'vehicle', 'motion']
-  },
-  {
-    url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerMeltdowns.mp4',
-    keywords: ['meltdown', 'destruction', 'chaos', 'intense', 'explosive', 'dramatic']
-  },
-  {
-    url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4',
-    keywords: ['dragon', 'fantasy', 'magical', 'medieval', 'creature', 'mystical', 'adventure']
-  },
-  {
-    url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/SubaruOutbackOnStreetAndDirt.mp4',
-    keywords: ['car', 'vehicle', 'road', 'driving', 'outdoor', 'adventure', 'travel']
-  },
-  {
-    url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4',
-    keywords: ['steel', 'metal', 'industrial', 'futuristic', 'technology', 'sci-fi']
-  }
-];
-
-// Smart video selection based on prompt keywords
-const selectVideoByPrompt = (prompt) => {
-  const promptLower = prompt.toLowerCase();
-  
-  // Find the best matching video based on keywords
-  let bestMatch = MOCK_VIDEOS[0]; // Default fallback
-  let bestScore = 0;
-  
-  for (const video of MOCK_VIDEOS) {
-    let score = 0;
-    
-    // Check how many keywords match the prompt
-    for (const keyword of video.keywords) {
-      if (promptLower.includes(keyword)) {
-        score += 1;
-      }
-    }
-    
-    // Special scoring for common words
-    if (promptLower.includes('dragon') || promptLower.includes('phoenix') || promptLower.includes('magical')) {
-      if (video.keywords.includes('dragon') || video.keywords.includes('fantasy')) {
-        score += 5;
-      }
-    }
-    
-    if (promptLower.includes('fire') || promptLower.includes('flame') || promptLower.includes('burning')) {
-      if (video.keywords.includes('fire') || video.keywords.includes('blaze')) {
-        score += 5;
-      }
-    }
-    
-    if (promptLower.includes('car') || promptLower.includes('drive') || promptLower.includes('road')) {
-      if (video.keywords.includes('car') || video.keywords.includes('vehicle')) {
-        score += 5;
-      }
-    }
-    
-    if (promptLower.includes('medical') || promptLower.includes('doctor') || promptLower.includes('health')) {
-      if (video.keywords.includes('abstract') || video.keywords.includes('sci-fi')) {
-        score += 3;
-      }
-    }
-    
-    if (score > bestScore) {
-      bestScore = score;
-      bestMatch = video;
-    }
-  }
-  
-  // If no keywords match, select randomly to avoid always showing the same video
-  if (bestScore === 0) {
-    const randomIndex = Math.floor(Math.random() * MOCK_VIDEOS.length);
-    bestMatch = MOCK_VIDEOS[randomIndex];
-  }
-  
-  console.log(`🎯 Selected video for prompt "${prompt.substring(0, 50)}...": ${bestMatch.url.split('/').pop()} (score: ${bestScore})`);
-  return bestMatch.url;
+// Get base URL for proper thumbnail generation
+const getBaseUrl = () => {
+  return process.env.RENDER_EXTERNAL_URL || 
+         process.env.BASE_URL || 
+         `http://localhost:${PORT}`;
 };
 
-// Generate smart thumbnail based on prompt
-const generateSmartThumbnail = (prompt) => {
-  const colors = [
-    '667eea', '764ba2', 'f093fb', 'f5576c', 
-    '4facfe', '00f2fe', 'a8edea', 'fed6e3',
-    'ffecd2', 'fcb69f', 'feca57', 'ff9ff3'
-  ];
-  
-  const randomColor = colors[Math.floor(Math.random() * colors.length)];
-  const shortPrompt = prompt.substring(0, 30).replace(/[^a-zA-Z0-9\s]/g, '');
-  
-  return `https://via.placeholder.com/400x300/${randomColor}/ffffff?text=${encodeURIComponent(shortPrompt)}`;
+// Middleware
+app.use(cors({
+  origin: [
+    'http://localhost:3000',
+    'http://localhost:3001',
+    'https://ai-video-studio-frontend.onrender.com',
+    process.env.FRONTEND_URL
+  ].filter(Boolean),
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+}));
+
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+
+// Static files for thumbnails
+app.use('/thumbnails', express.static(path.join(__dirname, 'thumbnails')));
+
+// Utility functions
+const generateVideoId = () => {
+  return 'video_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
 };
 
-// Root endpoint
-app.get('/', (req, res) => {
-  res.json({ 
-    message: 'AI Video Studio Backend API',
-    version: '1.0.0',
-    status: 'running',
-    timestamp: new Date().toISOString(),
-    mock_videos: MOCK_VIDEOS.length
-  });
-});
+const generateThumbnailUrl = (videoId) => {
+  const baseUrl = getBaseUrl();
+  return `${baseUrl}/thumbnails/${videoId}.jpg`;
+};
 
-// Health check endpoint
-app.get('/api/health', (req, res) => {
+const createPlaceholderThumbnail = (videoId, title) => {
+  // Create thumbnails directory if it doesn't exist
+  const thumbnailsDir = path.join(__dirname, 'thumbnails');
+  if (!fs.existsSync(thumbnailsDir)) {
+    fs.mkdirSync(thumbnailsDir, { recursive: true });
+  }
+
+  // For now, we'll use a placeholder. In production, you'd generate actual thumbnails
+  const placeholderPath = path.join(thumbnailsDir, `${videoId}.jpg`);
+  
+  // Create a simple text file as placeholder (you'd use image generation library in production)
+  const placeholderData = `Thumbnail for: ${title}`;
+  fs.writeFileSync(placeholderPath, placeholderData);
+  
+  return generateThumbnailUrl(videoId);
+};
+
+const formatPromptForAI = (userPrompt, duration = 60) => {
+  return {
+    prompt: `Create a ${duration}-second professional medical education video about: ${userPrompt}. 
+    Requirements:
+    - Professional medical education content
+    - Clear, authoritative narration
+    - Medical accuracy essential
+    - Target audience: Healthcare professionals and patients
+    - Educational and informative tone
+    - Avoid: Commercial advertisements, unrelated company content, promotional material
+    
+    Topic: ${userPrompt}`,
+    duration: duration,
+    style: "medical-educational",
+    category: "healthcare",
+    avoid_commercial: true
+  };
+};
+
+// Routes
+
+// Health check
+app.get('/health', (req, res) => {
   res.json({ 
     status: 'healthy', 
     timestamp: new Date().toISOString(),
-    message: 'AI Video Studio Backend is running!',
-    cors: 'configured',
-    environment: process.env.NODE_ENV || 'development',
-    available_mock_videos: MOCK_VIDEOS.length
+    baseUrl: getBaseUrl(),
+    environment: process.env.NODE_ENV || 'development'
   });
 });
 
 // Get all videos
 app.get('/api/videos', async (req, res) => {
   try {
-    console.log('📹 Fetching videos from Supabase...');
-    
-    const { data: videos, error } = await supabase
+    const { data, error } = await supabase
       .from('videos')
       .select('*')
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('❌ Supabase error:', error);
-      return res.status(500).json({ 
-        error: 'Failed to fetch videos',
-        details: error.message 
-      });
+      console.error('Supabase error:', error);
+      return res.status(500).json({ error: 'Failed to fetch videos', details: error.message });
     }
 
-    console.log(`✅ Successfully fetched ${videos?.length || 0} videos`);
-    res.json(videos || []);
+    // Ensure thumbnail URLs are properly formatted
+    const videosWithValidUrls = data.map(video => ({
+      ...video,
+      thumbnail_url: video.thumbnail_url?.startsWith('http') 
+        ? video.thumbnail_url 
+        : generateThumbnailUrl(video.id)
+    }));
+
+    res.json(videosWithValidUrls);
   } catch (error) {
-    console.error('❌ Server error in /api/videos:', error);
-    res.status(500).json({ 
-      error: 'Internal server error',
-      details: error.message 
-    });
+    console.error('Error fetching videos:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// Generate new video - WITH SMART VIDEO SELECTION
-app.post('/api/generate', async (req, res) => {
+// Generate video
+app.post('/api/generate-video', async (req, res) => {
   try {
-    console.log('🎬 Generate video request received:', req.body);
-    
-    const { prompt, style = 'cinematic', duration = 10 } = req.body;
+    const { prompt, duration = 60 } = req.body;
 
-    // Validate input
-    if (!prompt || prompt.trim() === '') {
-      console.log('❌ Missing prompt');
+    if (!prompt || prompt.trim().length === 0) {
       return res.status(400).json({ error: 'Prompt is required' });
     }
 
-    if (prompt.trim().length < 5) {
-      console.log('❌ Prompt too short');
-      return res.status(400).json({ error: 'Prompt must be at least 5 characters' });
-    }
+    const videoId = generateVideoId();
+    const thumbnailUrl = createPlaceholderThumbnail(videoId, prompt);
+    
+    // Format prompt for AI API
+    const formattedPrompt = formatPromptForAI(prompt, duration);
+    
+    console.log('Generating video with prompt:', formattedPrompt);
 
-    // Create video record with smart video selection
-    const videoData = {
-      title: prompt.trim().substring(0, 100),
-      prompt: prompt.trim(),
-      style: style,
-      duration: parseInt(duration) || 10,
-      status: 'generating',
-      progress: 0,
-      video_url: null,
-      thumbnail_url: generateSmartThumbnail(prompt.trim()),
-      runway_model: 'smart_mock',
-      metadata: {
-        generation_mode: 'SMART_MOCK',
-        prompt_analysis: 'keyword_matching'
-      }
+    // Simulate AI video generation (replace with actual AI API call)
+    const simulateVideoGeneration = async () => {
+      // In production, replace this with actual AI API calls:
+      // - Runway ML API
+      // - Luma AI API
+      // - Pika Labs API
+      
+      await new Promise(resolve => setTimeout(resolve, 2000)); // Simulate processing time
+      
+      // Mock response - replace with actual AI API response
+      return {
+        video_url: `https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_1mb.mp4`,
+        thumbnail_url: thumbnailUrl,
+        duration: duration,
+        status: 'completed'
+      };
     };
 
-    console.log('💾 Saving video to Supabase...');
+    // Generate video (mock for now)
+    const aiResponse = await simulateVideoGeneration();
 
-    // Save to Supabase
+    // Save to database
+    const videoData = {
+      id: videoId,
+      title: prompt.substring(0, 100), // Truncate if too long
+      description: `Educational medical video: ${prompt}`,
+      video_url: aiResponse.video_url,
+      thumbnail_url: thumbnailUrl,
+      duration: duration,
+      status: 'completed',
+      prompt: prompt,
+      created_at: new Date().toISOString()
+    };
+
     const { data, error } = await supabase
       .from('videos')
       .insert([videoData])
@@ -241,58 +193,17 @@ app.post('/api/generate', async (req, res) => {
       .single();
 
     if (error) {
-      console.error('❌ Supabase insert error:', error);
-      return res.status(500).json({ 
-        error: 'Failed to save video to database',
-        details: error.message 
-      });
+      console.error('Database error:', error);
+      return res.status(500).json({ error: 'Failed to save video', details: error.message });
     }
 
-    console.log('✅ Video saved successfully with UUID:', data.id);
+    console.log('Video generated successfully:', videoId);
+    res.status(201).json(data);
 
-    // Smart video generation process
-    setTimeout(async () => {
-      try {
-        console.log('⚙️ Updating video to processing...', data.id);
-        await supabase
-          .from('videos')
-          .update({ 
-            status: 'processing',
-            progress: 50
-          })
-          .eq('id', data.id);
-
-        // Complete with smart video selection
-        setTimeout(async () => {
-          try {
-            console.log('🎯 Selecting appropriate video for prompt...');
-            const selectedVideoUrl = selectVideoByPrompt(prompt.trim());
-            
-            console.log('✅ Completing video generation with selected video...', data.id);
-            await supabase
-              .from('videos')
-              .update({ 
-                status: 'completed',
-                progress: 100,
-                video_url: selectedVideoUrl
-              })
-              .eq('id', data.id);
-            console.log('🎉 Video generation completed with URL:', selectedVideoUrl);
-          } catch (error) {
-            console.error('❌ Error completing video:', error);
-          }
-        }, 5000);
-      } catch (error) {
-        console.error('❌ Error updating video progress:', error);
-      }
-    }, 3000);
-
-    // Return immediate response
-    res.json(data);
   } catch (error) {
-    console.error('❌ Video generation error:', error);
+    console.error('Error generating video:', error);
     res.status(500).json({ 
-      error: 'Internal server error',
+      error: 'Failed to generate video', 
       details: error.message 
     });
   }
@@ -302,30 +213,61 @@ app.post('/api/generate', async (req, res) => {
 app.get('/api/videos/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    console.log('🔍 Fetching video by ID:', id);
-    
-    const { data: video, error } = await supabase
+
+    const { data, error } = await supabase
       .from('videos')
       .select('*')
       .eq('id', id)
       .single();
 
-    if (error) {
-      console.error('❌ Video not found:', error);
-      return res.status(404).json({ 
-        error: 'Video not found',
-        details: error.message 
-      });
+    if (error || !data) {
+      return res.status(404).json({ error: 'Video not found' });
     }
 
-    console.log('✅ Video found:', video.id);
-    res.json(video);
+    // Ensure thumbnail URL is properly formatted
+    const videoWithValidUrl = {
+      ...data,
+      thumbnail_url: data.thumbnail_url?.startsWith('http') 
+        ? data.thumbnail_url 
+        : generateThumbnailUrl(data.id)
+    };
+
+    res.json(videoWithValidUrl);
   } catch (error) {
-    console.error('❌ Get video error:', error);
-    res.status(500).json({ 
-      error: 'Internal server error',
-      details: error.message 
-    });
+    console.error('Error fetching video:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Update video
+app.put('/api/videos/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updates = req.body;
+
+    // Remove id from updates to prevent overwriting
+    delete updates.id;
+    delete updates.created_at;
+
+    const { data, error } = await supabase
+      .from('videos')
+      .update(updates)
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) {
+      return res.status(500).json({ error: 'Failed to update video', details: error.message });
+    }
+
+    if (!data) {
+      return res.status(404).json({ error: 'Video not found' });
+    }
+
+    res.json(data);
+  } catch (error) {
+    console.error('Error updating video:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
@@ -333,105 +275,74 @@ app.get('/api/videos/:id', async (req, res) => {
 app.delete('/api/videos/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    console.log('🗑️ Deleting video:', id);
-    
+
     const { error } = await supabase
       .from('videos')
       .delete()
       .eq('id', id);
 
     if (error) {
-      console.error('❌ Delete error:', error);
-      return res.status(500).json({ 
-        error: 'Failed to delete video',
-        details: error.message 
-      });
+      return res.status(500).json({ error: 'Failed to delete video', details: error.message });
     }
 
-    console.log('✅ Video deleted:', id);
+    // Clean up thumbnail file
+    const thumbnailPath = path.join(__dirname, 'thumbnails', `${id}.jpg`);
+    if (fs.existsSync(thumbnailPath)) {
+      fs.unlinkSync(thumbnailPath);
+    }
+
     res.json({ message: 'Video deleted successfully' });
   } catch (error) {
-    console.error('❌ Delete video error:', error);
-    res.status(500).json({ 
-      error: 'Internal server error',
-      details: error.message 
-    });
+    console.error('Error deleting video:', error);
+    res.status(500).json({ error: 'Internal server error' });
   }
 });
 
-// Update video status
-app.patch('/api/videos/:id/status', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { status, progress, video_url } = req.body;
-    
-    console.log('🔄 Updating video status:', id, status);
-    
-    const updateData = { status };
-    if (progress !== undefined) updateData.progress = progress;
-    if (video_url) updateData.video_url = video_url;
+// Serve thumbnail files
+app.get('/api/thumbnails/:videoId', (req, res) => {
+  const { videoId } = req.params;
+  const thumbnailPath = path.join(__dirname, 'thumbnails', `${videoId}.jpg`);
 
-    const { data, error } = await supabase
-      .from('videos')
-      .update(updateData)
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error) {
-      console.error('❌ Status update error:', error);
-      return res.status(500).json({ 
-        error: 'Failed to update video status',
-        details: error.message 
-      });
-    }
-
-    console.log('✅ Status updated:', data.id);
-    res.json(data);
-  } catch (error) {
-    console.error('❌ Status update error:', error);
-    res.status(500).json({ 
-      error: 'Internal server error',
-      details: error.message 
-    });
+  if (fs.existsSync(thumbnailPath)) {
+    res.sendFile(thumbnailPath);
+  } else {
+    // Return a default placeholder image
+    res.status(404).json({ error: 'Thumbnail not found' });
   }
 });
 
-// Get available mock videos (for testing)
-app.get('/api/mock-videos', (req, res) => {
-  res.json({
-    total: MOCK_VIDEOS.length,
-    videos: MOCK_VIDEOS.map(v => ({
-      url: v.url,
-      name: v.url.split('/').pop(),
-      keywords: v.keywords
-    }))
+// Error handling middleware
+app.use((error, req, res, next) => {
+  console.error('Unhandled error:', error);
+  res.status(500).json({ 
+    error: 'Internal server error',
+    message: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
   });
 });
 
 // 404 handler
 app.use('*', (req, res) => {
-  res.status(404).json({ 
-    error: 'Route not found',
-    message: `Cannot ${req.method} ${req.originalUrl}`
-  });
-});
-
-// Error handler
-app.use((error, req, res, next) => {
-  console.error('🚨 Global error:', error);
-  res.status(500).json({ 
-    error: 'Something went wrong!',
-    message: error.message 
-  });
+  res.status(404).json({ error: 'Route not found' });
 });
 
 // Start server
 app.listen(PORT, () => {
   console.log(`🚀 AI Video Studio Backend running on port ${PORT}`);
-  console.log(`📡 Health check: http://localhost:${PORT}/api/health`);
-  console.log(`🎬 Frontend allowed: https://ai-video-studio-frontend.onrender.com`);
-  console.log(`🎯 Mock videos available: ${MOCK_VIDEOS.length}`);
-  console.log(`🔧 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`📍 Base URL: ${getBaseUrl()}`);
+  console.log(`🏥 Medical Education Platform Ready`);
+  console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
 });
+
+// Graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('SIGTERM received, shutting down gracefully');
+  process.exit(0);
+});
+
+process.on('SIGINT', () => {
+  console.log('SIGINT received, shutting down gracefully');
+  process.exit(0);
+});
+
+module.exports = app;
 
