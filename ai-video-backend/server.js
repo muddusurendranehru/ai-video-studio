@@ -6,7 +6,7 @@ const { createClient } = require('@supabase/supabase-js');
 const app = express();
 const PORT = process.env.PORT || 5001;
 
-// CORS configuration - Fixes frontend connection
+// CORS configuration
 app.use(cors({
   origin: [
     'https://ai-video-studio-frontend.onrender.com',
@@ -33,15 +33,7 @@ app.get('/', (req, res) => {
     message: 'AI Video Studio Backend API',
     version: '1.0.0',
     status: 'running',
-    timestamp: new Date().toISOString(),
-    endpoints: [
-      'GET /',
-      'GET /api/health',
-      'GET /api/videos',
-      'POST /api/generate',
-      'GET /api/videos/:id',
-      'DELETE /api/videos/:id'
-    ]
+    timestamp: new Date().toISOString()
   });
 });
 
@@ -52,8 +44,7 @@ app.get('/api/health', (req, res) => {
     timestamp: new Date().toISOString(),
     message: 'AI Video Studio Backend is running!',
     cors: 'configured',
-    environment: process.env.NODE_ENV || 'development',
-    supabase: supabaseUrl ? 'configured' : 'missing'
+    environment: process.env.NODE_ENV || 'development'
   });
 });
 
@@ -86,12 +77,12 @@ app.get('/api/videos', async (req, res) => {
   }
 });
 
-// Generate new video
+// Generate new video - FIXED FOR UUID SCHEMA
 app.post('/api/generate', async (req, res) => {
   try {
     console.log('🎬 Generate video request received:', req.body);
     
-    const { prompt, style = 'cinematic', duration = 5 } = req.body;
+    const { prompt, style = 'cinematic', duration = 10 } = req.body;
 
     // Validate input
     if (!prompt || prompt.trim() === '') {
@@ -104,29 +95,28 @@ app.post('/api/generate', async (req, res) => {
       return res.status(400).json({ error: 'Prompt must be at least 5 characters' });
     }
 
-    // Create video record
+    // Create video record - LET SUPABASE GENERATE UUID
     const videoData = {
-      id: `video_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      // Don't specify id - let Supabase auto-generate UUID
+      title: prompt.trim().substring(0, 100), // Limit to 100 chars
       prompt: prompt.trim(),
-      title: prompt.trim().substring(0, 50) + (prompt.length > 50 ? '...' : ''),
       style: style,
-      duration: parseInt(duration) || 5,
+      duration: parseInt(duration) || 10,
       status: 'generating',
       progress: 0,
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
       video_url: null,
       thumbnail_url: `https://via.placeholder.com/400x300/667eea/ffffff?text=${encodeURIComponent(prompt.substring(0, 20))}`,
       runway_model: 'smart_mock',
       metadata: {
         generation_mode: 'SMART_MOCK',
-        mock_thumbnail: `https://via.placeholder.com/400x300/667eea/ffffff?text=${encodeURIComponent(prompt.substring(0, 20))}`
+        frontend_request: true
       }
+      // created_at and updated_at will auto-populate from defaults
     };
 
-    console.log('💾 Saving video to Supabase:', videoData.id);
+    console.log('💾 Saving video to Supabase...');
 
-    // Save to Supabase
+    // Save to Supabase - let it generate UUID
     const { data, error } = await supabase
       .from('videos')
       .insert([videoData])
@@ -141,32 +131,30 @@ app.post('/api/generate', async (req, res) => {
       });
     }
 
-    console.log('✅ Video saved successfully:', data.id);
+    console.log('✅ Video saved successfully with UUID:', data.id);
 
-    // Simulate video generation process
+    // Simulate video generation process using the generated UUID
     setTimeout(async () => {
       try {
-        console.log('⚙️ Updating video to processing...');
+        console.log('⚙️ Updating video to processing...', data.id);
         await supabase
           .from('videos')
           .update({ 
             status: 'processing',
-            progress: 50,
-            updated_at: new Date().toISOString()
+            progress: 50
           })
           .eq('id', data.id);
 
         // Complete the video after another delay
         setTimeout(async () => {
           try {
-            console.log('✅ Completing video generation...');
+            console.log('✅ Completing video generation...', data.id);
             await supabase
               .from('videos')
               .update({ 
                 status: 'completed',
                 progress: 100,
-                video_url: `https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4`,
-                updated_at: new Date().toISOString()
+                video_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4'
               })
               .eq('id', data.id);
             console.log('🎉 Video generation completed:', data.id);
@@ -179,7 +167,7 @@ app.post('/api/generate', async (req, res) => {
       }
     }, 3000);
 
-    // Return immediate response
+    // Return immediate response with generated UUID
     res.json(data);
   } catch (error) {
     console.error('❌ Video generation error:', error);
@@ -251,7 +239,7 @@ app.delete('/api/videos/:id', async (req, res) => {
   }
 });
 
-// Update video status (for real-time updates)
+// Update video status
 app.patch('/api/videos/:id/status', async (req, res) => {
   try {
     const { id } = req.params;
@@ -259,10 +247,7 @@ app.patch('/api/videos/:id/status', async (req, res) => {
     
     console.log('🔄 Updating video status:', id, status);
     
-    const updateData = { 
-      status,
-      updated_at: new Date().toISOString()
-    };
+    const updateData = { status };
     if (progress !== undefined) updateData.progress = progress;
     if (video_url) updateData.video_url = video_url;
 
@@ -292,30 +277,20 @@ app.patch('/api/videos/:id/status', async (req, res) => {
   }
 });
 
-// 404 handler for unknown routes
+// 404 handler
 app.use('*', (req, res) => {
-  console.log('❌ 404 - Route not found:', req.method, req.originalUrl);
   res.status(404).json({ 
     error: 'Route not found',
-    message: `Cannot ${req.method} ${req.originalUrl}`,
-    availableRoutes: [
-      'GET /',
-      'GET /api/health',
-      'GET /api/videos',
-      'POST /api/generate',
-      'GET /api/videos/:id',
-      'DELETE /api/videos/:id'
-    ]
+    message: `Cannot ${req.method} ${req.originalUrl}`
   });
 });
 
-// Global error handler
+// Error handler
 app.use((error, req, res, next) => {
   console.error('🚨 Global error:', error);
   res.status(500).json({ 
     error: 'Something went wrong!',
-    message: error.message,
-    timestamp: new Date().toISOString()
+    message: error.message 
   });
 });
 
