@@ -14,50 +14,54 @@ app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 // File upload configuration
 const upload = multer({
   dest: 'uploads/',
-  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit
+  limits: { fileSize: 50 * 1024 * 1024 },
 });
 
-// In-memory storage for demo
+// In-memory storage
 let videos = [];
 let videoIdCounter = 1;
 
-// Mock video URLs for testing
+// Mock video URLs
 const mockVideoUrls = [
   'https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_1mb.mp4',
   'https://www.w3schools.com/html/mov_bbb.mp4',
   'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4'
 ];
 
-// Utility functions
 const delay = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
-// Routes
+// Root route
+app.get('/', (req, res) => {
+  res.json({ 
+    message: 'AI Video Studio Backend API',
+    status: 'running',
+    endpoints: {
+      health: '/api/health',
+      videos: '/api/videos',
+      generate: '/api/generate/runway or /api/generate/luma'
+    }
+  });
+});
 
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ 
     status: 'ok', 
     timestamp: new Date().toISOString(),
-    runwayConfigured: false,
-    lumaConfigured: false,
     mode: 'mock'
   });
 });
 
 // Get all videos
 app.get('/api/videos', (req, res) => {
-  try {
-    res.json(videos);
-  } catch (error) {
-    console.error('Error fetching videos:', error);
-    res.status(500).json({ error: 'Failed to fetch videos' });
-  }
+  res.json(videos);
 });
 
-// Generate video with Runway ML (Mock)
-app.post('/api/generate/runway', async (req, res) => {
+// Generate video (mock)
+app.post('/api/generate/:provider', async (req, res) => {
   try {
-    const { prompt, imageUrl, duration = 4, aspectRatio = '16:9' } = req.body;
+    const { prompt, duration = 4, aspectRatio = '16:9' } = req.body;
+    const { provider } = req.params;
 
     if (!prompt) {
       return res.status(400).json({ error: 'Prompt is required' });
@@ -65,14 +69,13 @@ app.post('/api/generate/runway', async (req, res) => {
 
     const videoId = `video_${videoIdCounter++}`;
     
-    // Create video entry
     const video = {
       id: videoId,
       prompt,
       status: 'generating',
       progress: 0,
       createdAt: new Date().toISOString(),
-      provider: 'runway',
+      provider,
       duration,
       aspectRatio
     };
@@ -80,55 +83,12 @@ app.post('/api/generate/runway', async (req, res) => {
     videos.push(video);
     res.json({ videoId, message: 'Video generation started (Mock Mode)' });
 
-    // Start mock generation process
+    // Start mock generation
     generateMockVideo(videoId);
 
   } catch (error) {
-    console.error('Error starting video generation:', error);
     res.status(500).json({ error: 'Failed to start video generation' });
   }
-});
-
-// Generate video with Luma AI (Mock)
-app.post('/api/generate/luma', async (req, res) => {
-  try {
-    const { prompt, imageUrl, aspectRatio = '16:9' } = req.body;
-
-    if (!prompt) {
-      return res.status(400).json({ error: 'Prompt is required' });
-    }
-
-    const videoId = `video_${videoIdCounter++}`;
-    
-    const video = {
-      id: videoId,
-      prompt,
-      status: 'generating',
-      progress: 0,
-      createdAt: new Date().toISOString(),
-      provider: 'luma',
-      aspectRatio
-    };
-
-    videos.push(video);
-    res.json({ videoId, message: 'Video generation started (Mock Mode)' });
-
-    // Start mock generation process
-    generateMockVideo(videoId);
-
-  } catch (error) {
-    console.error('Error starting video generation:', error);
-    res.status(500).json({ error: 'Failed to start video generation' });
-  }
-});
-
-// Get specific video
-app.get('/api/videos/:id', (req, res) => {
-  const video = videos.find(v => v.id === req.params.id);
-  if (!video) {
-    return res.status(404).json({ error: 'Video not found' });
-  }
-  res.json(video);
 });
 
 // Delete video
@@ -141,71 +101,28 @@ app.delete('/api/videos/:id', (req, res) => {
   res.json({ message: 'Video deleted' });
 });
 
-// Upload image endpoint
-app.post('/api/upload', upload.single('image'), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ error: 'No file uploaded' });
-    }
-
-    const imageUrl = `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`;
-    
-    res.json({ imageUrl });
-  } catch (error) {
-    console.error('Error uploading file:', error);
-    res.status(500).json({ error: 'Failed to upload file' });
-  }
-});
-
-// Serve uploaded files
-app.use('/uploads', express.static('uploads'));
-
-// Mock video generation function
+// Mock generation function
 async function generateMockVideo(videoId) {
-  try {
-    const video = videos.find(v => v.id === videoId);
-    if (!video) return;
+  const video = videos.find(v => v.id === videoId);
+  if (!video) return;
 
-    console.log(`Starting mock generation for video ${videoId}`);
-
-    // Simulate generation progress
-    for (let progress = 10; progress <= 90; progress += 10) {
-      await delay(2000); // Wait 2 seconds between updates
-      video.progress = progress;
-      console.log(`Video ${videoId} progress: ${progress}%`);
-    }
-
-    // Complete the generation
-    await delay(3000); // Final wait
-    
-    video.status = 'completed';
-    video.progress = 100;
-    video.videoUrl = mockVideoUrls[Math.floor(Math.random() * mockVideoUrls.length)];
-    video.completedAt = new Date().toISOString();
-    
-    console.log(`Video ${videoId} completed successfully (Mock)`);
-
-  } catch (error) {
-    console.error(`Error generating mock video ${videoId}:`, error);
-    const video = videos.find(v => v.id === videoId);
-    if (video) {
-      video.status = 'failed';
-      video.error = error.message;
-    }
+  // Simulate progress
+  for (let progress = 10; progress <= 90; progress += 20) {
+    await delay(3000);
+    video.progress = progress;
   }
-}
 
-// Error handling middleware
-app.use((error, req, res, next) => {
-  console.error('Unhandled error:', error);
-  res.status(500).json({ error: 'Internal server error' });
-});
+  // Complete
+  await delay(2000);
+  video.status = 'completed';
+  video.progress = 100;
+  video.videoUrl = mockVideoUrls[Math.floor(Math.random() * mockVideoUrls.length)];
+  video.completedAt = new Date().toISOString();
+}
 
 // Start server
 app.listen(PORT, () => {
-  console.log(`🚀 Mock Server running on port ${PORT}`);
-  console.log(`📍 Health check: http://localhost:${PORT}/api/health`);
-  console.log(`🎬 Mode: Mock video generation (no API keys required)`);
+  console.log(`🚀 Server running on port ${PORT}`);
 });
 
 module.exports = app;
