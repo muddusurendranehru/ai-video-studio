@@ -1,408 +1,231 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import './App.css';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api';
+// ✅ FIXED: Using deployed backend URL directly
+const API_BASE_URL = 'https://ai-video-studio-z4eu.onrender.com';
 
-const App = () => {
-  const [videos, setVideos] = useState([]);
+function App() {
   const [prompt, setPrompt] = useState('');
-  const [selectedImage, setSelectedImage] = useState(null);
-  const [imagePreview, setImagePreview] = useState('');
-  const [provider, setProvider] = useState('runway');
-  const [duration, setDuration] = useState(4);
-  const [aspectRatio, setAspectRatio] = useState('16:9');
+  const [videos, setVideos] = useState([]);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [backendHealthy, setBackendHealthy] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(null);
+  const [backendStatus, setBackendStatus] = useState('checking...');
 
   // Check backend health
-  const checkBackendHealth = useCallback(async () => {
+  const checkBackendHealth = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/health`);
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-      const data = await response.json();
-      setBackendHealthy(true);
-      setError('');
-      return data;
-    } catch (error) {
-      console.error('Backend health check failed:', error);
-      setBackendHealthy(false);
-      setError(`Backend connection failed: ${error.message}`);
-      throw error;
-    }
-  }, []);
-
-  // Fetch videos from backend
-  const fetchVideos = useCallback(async () => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/videos`);
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-      }
-      const data = await response.json();
-      setVideos(data);
-    } catch (error) {
-      console.error('Failed to fetch videos:', error);
-      if (backendHealthy) {
-        setError(`Failed to fetch videos: ${error.message}`);
-      }
-    }
-  }, [backendHealthy]);
-
-  // Upload image
-  const uploadImage = async (file) => {
-    const formData = new FormData();
-    formData.append('image', file);
-
-    try {
-      const response = await fetch(`${API_BASE_URL}/upload`, {
-        method: 'POST',
-        body: formData,
+      console.log('🔍 Checking backend health...');
+      const response = await fetch(`${API_BASE_URL}/api/health`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        }
       });
-
+      
       if (!response.ok) {
-        throw new Error(`Upload failed: ${response.status}`);
+        throw new Error(`HTTP ${response.status}`);
       }
-
-      const data = await response.json();
-      return data.imageUrl;
+      
+      const healthData = await response.json();
+      console.log('✅ Backend health:', healthData);
+      setBackendStatus('connected ✅');
+      return healthData;
     } catch (error) {
-      console.error('Upload error:', error);
+      console.error('❌ Backend health check failed:', error);
+      setBackendStatus('disconnected ❌');
       throw error;
+    }
+  };
+
+  // Fetch videos
+  const fetchVideos = async () => {
+    try {
+      console.log('📹 Fetching videos...');
+      const response = await fetch(`${API_BASE_URL}/api/videos`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      });
+      
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      
+      const videosData = await response.json();
+      setVideos(videosData);
+      console.log('✅ Videos fetched successfully:', videosData.length, 'videos');
+    } catch (error) {
+      console.error('❌ Failed to fetch videos:', error);
+      setVideos([]);
     }
   };
 
   // Generate video
   const generateVideo = async () => {
     if (!prompt.trim()) {
-      setError('Please enter a prompt');
-      return;
-    }
-
-    if (!backendHealthy) {
-      setError('Backend is not available');
+      setError('Please enter a video prompt');
       return;
     }
 
     setIsGenerating(true);
-    setError('');
+    setError(null);
+    setSuccess(null);
 
     try {
-      let imageUrl = '';
+      console.log('🎬 Generating video with prompt:', prompt);
       
-      if (selectedImage) {
-        imageUrl = await uploadImage(selectedImage);
-      }
-
-      const requestData = {
-        prompt: prompt.trim(),
-        imageUrl,
-        aspectRatio,
-      };
-
-      if (provider === 'runway') {
-        requestData.duration = duration;
-      }
-
-      const response = await fetch(`${API_BASE_URL}/generate/${provider}`, {
+      // ✅ FIXED: Using correct endpoint /api/generate/runway
+      const response = await fetch(`${API_BASE_URL}/api/generate/runway`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(requestData),
+        body: JSON.stringify({ 
+          prompt: prompt,
+          settings: {
+            duration: 5,
+            aspectRatio: '16:9'
+          }
+        })
       });
 
+      console.log('📊 Response status:', response.status);
+
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || `Generation failed: ${response.status}`);
+        const errorText = await response.text();
+        console.error('❌ Error response:', errorText);
+        throw new Error(`HTTP ${response.status}: ${errorText}`);
       }
 
-      const data = await response.json();
-      console.log('Video generation started:', data);
+      const result = await response.json();
+      console.log('✅ Video generation response:', result);
       
-      setPrompt('');
-      setSelectedImage(null);
-      setImagePreview('');
+      setSuccess('Video generated successfully!');
+      setPrompt(''); // Clear prompt
       
-      fetchVideos();
+      // Refresh videos list
+      await fetchVideos();
+
     } catch (error) {
-      console.error('Generation error:', error);
-      setError(`Generation failed: ${error.message}`);
+      console.error('❌ Video generation error:', error);
+      setError(error.message);
     } finally {
       setIsGenerating(false);
     }
   };
 
-  // Handle image selection
-  const handleImageSelect = (event) => {
-    const file = event.target.files[0];
-    if (file) {
-      if (file.size > 50 * 1024 * 1024) {
-        setError('Image file too large (max 50MB)');
-        return;
-      }
-      
-      setSelectedImage(file);
-      const reader = new FileReader();
-      reader.onload = (e) => setImagePreview(e.target.result);
-      reader.readAsDataURL(file);
-      setError('');
-    }
-  };
-
-  // Delete video
-  const deleteVideo = async (videoId) => {
-    try {
-      const response = await fetch(`${API_BASE_URL}/videos/${videoId}`, {
-        method: 'DELETE',
-      });
-
-      if (!response.ok) {
-        throw new Error(`Delete failed: ${response.status}`);
-      }
-
-      fetchVideos();
-    } catch (error) {
-      console.error('Delete error:', error);
-      setError(`Failed to delete video: ${error.message}`);
-    }
-  };
-
-  const formatDuration = (seconds) => `${seconds}s`;
-  const formatTimestamp = (timestamp) => new Date(timestamp).toLocaleString();
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'completed': return '#10b981';
-      case 'failed': return '#ef4444';
-      case 'generating': return '#f59e0b';
-      default: return '#6b7280';
-    }
-  };
-
+  // Initialize app
   useEffect(() => {
-    checkBackendHealth();
-    fetchVideos();
-
-    const interval = setInterval(() => {
-      if (backendHealthy) {
-        fetchVideos();
+    const initializeApp = async () => {
+      try {
+        await checkBackendHealth();
+        await fetchVideos();
+      } catch (error) {
+        console.error('❌ App initialization failed:', error);
       }
-    }, 5000);
+    };
+    
+    initializeApp();
+  }, []);
 
-    return () => clearInterval(interval);
-  }, [checkBackendHealth, fetchVideos, backendHealthy]);
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      generateVideo();
+    }
+  };
 
   return (
-    <div className="video-generation-app">
-      <header className="app-header">
+    <div className="App">
+      <header className="App-header">
         <h1>🎬 AI Video Studio</h1>
-        <div className="status-indicator">
-          <div 
-            className={`status-dot ${backendHealthy ? 'healthy' : 'unhealthy'}`}
-            title={backendHealthy ? 'Backend connected' : 'Backend disconnected'}
-          />
-          <span>{backendHealthy ? 'Connected' : 'Disconnected'}</span>
-        </div>
+        <p>Backend Status: {backendStatus}</p>
+        <p>API URL: {API_BASE_URL}</p>
       </header>
 
-      {error && (
-        <div className="error-banner">
-          <span>⚠️ {error}</span>
-          <button onClick={() => setError('')}>×</button>
-        </div>
-      )}
-
-      <div className="main-content">
-        <div className="generation-panel">
+      <main className="main-content">
+        {/* Video Generation Form */}
+        <section className="generation-section">
           <h2>Generate New Video</h2>
           
-          <div className="form-group">
-            <label>AI Provider:</label>
-            <select 
-              value={provider} 
-              onChange={(e) => setProvider(e.target.value)}
-              disabled={isGenerating}
-            >
-              <option value="runway">Runway ML</option>
-              <option value="luma">Luma AI</option>
-            </select>
-          </div>
-
-          <div className="form-group">
-            <label>Text Prompt:</label>
+          <div className="input-group">
+            <label htmlFor="prompt">Video Prompt:</label>
             <textarea
+              id="prompt"
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
+              onKeyPress={handleKeyPress}
               placeholder="Describe the video you want to generate..."
-              disabled={isGenerating}
               rows={3}
-            />
-          </div>
-
-          <div className="form-group">
-            <label>Reference Image (optional):</label>
-            <input
-              type="file"
-              accept="image/*"
-              onChange={handleImageSelect}
               disabled={isGenerating}
             />
-            {imagePreview && (
-              <div className="image-preview">
-                <img src={imagePreview} alt="Preview" />
-                <button 
-                  onClick={() => {
-                    setSelectedImage(null);
-                    setImagePreview('');
-                  }}
-                  disabled={isGenerating}
-                >
-                  Remove
-                </button>
-              </div>
-            )}
-          </div>
-
-          <div className="form-row">
-            {provider === 'runway' && (
-              <div className="form-group">
-                <label>Duration:</label>
-                <select 
-                  value={duration} 
-                  onChange={(e) => setDuration(Number(e.target.value))}
-                  disabled={isGenerating}
-                >
-                  <option value={4}>4 seconds</option>
-                  <option value={8}>8 seconds</option>
-                  <option value={16}>16 seconds</option>
-                </select>
-              </div>
-            )}
-
-            <div className="form-group">
-              <label>Aspect Ratio:</label>
-              <select 
-                value={aspectRatio} 
-                onChange={(e) => setAspectRatio(e.target.value)}
-                disabled={isGenerating}
-              >
-                <option value="16:9">16:9 (Landscape)</option>
-                <option value="9:16">9:16 (Portrait)</option>
-                <option value="1:1">1:1 (Square)</option>
-              </select>
-            </div>
           </div>
 
           <button
             onClick={generateVideo}
-            disabled={isGenerating || !backendHealthy || !prompt.trim()}
-            className="generate-button"
+            disabled={isGenerating || !prompt.trim()}
+            className={`generate-btn ${
+              isGenerating || !prompt.trim() ? 'disabled' : ''
+            }`}
           >
-            {isGenerating ? 'Generating...' : 'Generate Video'}
+            {isGenerating ? 'Generating Video...' : 'Generate Video'}
           </button>
-        </div>
 
-        <div className="videos-panel">
-          <div className="panel-header">
-            <h2>Generated Videos ({videos.length})</h2>
-            <button onClick={fetchVideos} disabled={!backendHealthy}>
-              🔄 Refresh
-            </button>
-          </div>
-
-          {videos.length === 0 ? (
-            <div className="empty-state">
-              <p>No videos generated yet. Create your first video!</p>
+          {/* Status Messages */}
+          {error && (
+            <div className="message error">
+              <strong>Error:</strong> {error}
             </div>
+          )}
+
+          {success && (
+            <div className="message success">
+              <strong>Success:</strong> {success}
+            </div>
+          )}
+        </section>
+
+        {/* Videos List */}
+        <section className="videos-section">
+          <h2>Generated Videos ({videos.length})</h2>
+          
+          {videos.length === 0 ? (
+            <p className="no-videos">
+              No videos generated yet. Create your first video above!
+            </p>
           ) : (
             <div className="videos-grid">
-              {videos.map((video) => (
-                <div key={video.id} className="video-card">
-                  <div className="video-header">
-                    <span className="video-id">{video.id}</span>
-                    <div 
-                      className="status-badge" 
-                      style={{ backgroundColor: getStatusColor(video.status) }}
+              {videos.map((video, index) => (
+                <div key={video.id || index} className="video-card">
+                  {video.videoUrl && (
+                    <video
+                      src={video.videoUrl}
+                      controls
+                      className="video-player"
+                      poster={video.thumbnailUrl}
                     >
-                      {video.status}
-                    </div>
-                  </div>
-
-                  <div className="video-content">
-                    {video.videoUrl ? (
-                      <video controls className="video-player">
-                        <source src={video.videoUrl} type="video/mp4" />
-                        Your browser does not support the video tag.
-                      </video>
-                    ) : (
-                      <div className="video-placeholder">
-                        <div className="placeholder-content">
-                          {video.status === 'generating' && (
-                            <>
-                              <div className="spinner"></div>
-                              <div className="progress-bar">
-                                <div 
-                                  className="progress-fill" 
-                                  style={{ width: `${video.progress || 0}%` }}
-                                ></div>
-                              </div>
-                              <p>{video.progress || 0}% complete</p>
-                            </>
-                          )}
-                          {video.status === 'failed' && (
-                            <>
-                              <span className="error-icon">❌</span>
-                              <p>Generation failed</p>
-                              {video.error && <small>{video.error}</small>}
-                            </>
-                          )}
-                        </div>
-                      </div>
+                      Your browser does not support the video tag.
+                    </video>
+                  )}
+                  
+                  <div className="video-info">
+                    <p><strong>Prompt:</strong> {video.prompt || 'No prompt available'}</p>
+                    {video.createdAt && (
+                      <p className="timestamp">
+                        Created: {new Date(video.createdAt).toLocaleString()}
+                      </p>
                     )}
-                  </div>
-
-                  <div className="video-details">
-                    <p className="prompt">{video.prompt}</p>
-                    <div className="video-meta">
-                      <span>Provider: {video.provider}</span>
-                      {video.duration && <span>Duration: {formatDuration(video.duration)}</span>}
-                      <span>Ratio: {video.aspectRatio}</span>
-                    </div>
-                    <div className="video-timestamps">
-                      <small>Created: {formatTimestamp(video.createdAt)}</small>
-                      {video.completedAt && (
-                        <small>Completed: {formatTimestamp(video.completedAt)}</small>
-                      )}
-                    </div>
-                  </div>
-
-                  <div className="video-actions">
-                    {video.videoUrl && (
-                      <a 
-                        href={video.videoUrl} 
-                        download 
-                        className="download-button"
-                      >
-                        📥 Download
-                      </a>
-                    )}
-                    <button 
-                      onClick={() => deleteVideo(video.id)}
-                      className="delete-button"
-                    >
-                      🗑️ Delete
-                    </button>
                   </div>
                 </div>
               ))}
             </div>
           )}
-        </div>
-      </div>
+        </section>
+      </main>
     </div>
   );
-};
+}
 
 export default App;
