@@ -1,7 +1,6 @@
 const express = require('express');
 const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
-const axios = require('axios');
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -62,7 +61,7 @@ app.get('/api/videos', async (req, res) => {
     }
 });
 
-// Runway ML API functions
+// Runway ML API functions using built-in fetch
 async function callRunwayAPI(prompt) {
     if (!RUNWAY_API_KEY) {
         console.log('⚠️ No Runway API key - using demo mode');
@@ -78,35 +77,42 @@ async function callRunwayAPI(prompt) {
         console.log('🔑 API Key preview:', RUNWAY_API_KEY.substring(0, 15) + '...');
         console.log('📝 Prompt:', prompt);
 
-        // Runway ML API call
-        const response = await axios.post('https://api.runwayml.com/v1/generate/video', {
-            prompt: prompt,
-            model: 'gen3a_turbo',
-            duration: 10,
-            ratio: '16:9'
-        }, {
+        // Runway ML API call using built-in fetch
+        const response = await fetch('https://api.runwayml.com/v1/generate/video', {
+            method: 'POST',
             headers: {
                 'Authorization': `Bearer ${RUNWAY_API_KEY}`,
                 'Content-Type': 'application/json'
             },
-            timeout: 180000 // 3 minutes timeout
+            body: JSON.stringify({
+                prompt: prompt,
+                model: 'gen3a_turbo',
+                duration: 10,
+                ratio: '16:9'
+            })
         });
 
-        console.log('✅ Runway API response:', response.data);
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Runway API error: ${response.status} - ${errorText}`);
+        }
+
+        const data = await response.json();
+        console.log('✅ Runway API response:', data);
 
         // If Runway returns a task ID, we need to poll for completion
-        if (response.data.id) {
-            return await pollRunwayTask(response.data.id);
+        if (data.id) {
+            return await pollRunwayTask(data.id);
         }
 
         return {
             mode: 'production',
-            video_url: response.data.output || response.data.video_url,
-            runway_response: response.data
+            video_url: data.output || data.video_url,
+            runway_response: data
         };
 
     } catch (error) {
-        console.error('❌ Runway API error:', error.response?.data || error.message);
+        console.error('❌ Runway API error:', error.message);
         
         // If API fails, return demo but log the error
         return {
@@ -117,33 +123,38 @@ async function callRunwayAPI(prompt) {
     }
 }
 
-// Poll Runway task until completion
+// Poll Runway task until completion using built-in fetch
 async function pollRunwayTask(taskId, maxAttempts = 30) {
     console.log(`🔄 Polling Runway task: ${taskId}`);
     
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         try {
-            const response = await axios.get(`https://api.runwayml.com/v1/tasks/${taskId}`, {
+            const response = await fetch(`https://api.runwayml.com/v1/tasks/${taskId}`, {
                 headers: {
                     'Authorization': `Bearer ${RUNWAY_API_KEY}`,
                     'Content-Type': 'application/json'
                 }
             });
 
-            console.log(`🔄 Attempt ${attempt}: Status = ${response.data.status}`);
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+            }
 
-            if (response.data.status === 'SUCCEEDED') {
+            const data = await response.json();
+            console.log(`🔄 Attempt ${attempt}: Status = ${data.status}`);
+
+            if (data.status === 'SUCCEEDED') {
                 console.log('✅ Video generation completed!');
                 return {
                     mode: 'production',
-                    video_url: response.data.output[0]?.url || response.data.result?.url,
-                    runway_response: response.data
+                    video_url: data.output?.[0]?.url || data.result?.url,
+                    runway_response: data
                 };
             }
 
-            if (response.data.status === 'FAILED') {
-                console.error('❌ Runway task failed:', response.data.error);
-                throw new Error(`Task failed: ${response.data.error}`);
+            if (data.status === 'FAILED') {
+                console.error('❌ Runway task failed:', data.error);
+                throw new Error(`Task failed: ${data.error}`);
             }
 
             // Wait 5 seconds before next poll
