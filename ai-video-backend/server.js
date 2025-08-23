@@ -1,300 +1,252 @@
 const express = require('express');
 const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
+const axios = require('axios');
 
 const app = express();
+const port = process.env.PORT || 3001;
+
+// Environment variables
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY;
+const RUNWAY_API_KEY = process.env.RUNWAY_API_KEY;
 
 // Initialize Supabase
-let supabase = null;
-if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
-  supabase = createClient(
-    process.env.SUPABASE_URL,
-    process.env.SUPABASE_SERVICE_ROLE_KEY
-  );
-  console.log('✅ Supabase connected');
-} else {
-  console.log('⚠️ Supabase not configured');
-}
+const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-// CORS
-const corsOptions = {
-  origin: [
-    'http://localhost:3000',
-    'https://ai-video-studio-frontend.onrender.com',
-    'https://ai-video-studio-z4eu.onrender.com'
-  ],
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization'],
-  optionsSuccessStatus: 200
-};
-
-app.use(cors(corsOptions));
+// Middleware
+app.use(cors());
 app.use(express.json());
 
-// Logging
-app.use((req, res, next) => {
-  console.log(`${req.method} ${req.path} - ${new Date().toISOString()}`);
-  next();
-});
-
-// Job tracking
-const jobs = new Map();
-
-// Root endpoint
-app.get('/', (req, res) => {
-  res.json({
-    message: 'AI Video Studio Backend API',
-    status: 'running',
-    endpoints: {
-      health: '/api/health',
-      videos: '/api/videos',
-      generate: '/api/generate/runway'
-    }
-  });
-});
-
-// Health check
-app.get('/api/health', (req, res) => {
-  res.json({
-    status: 'ok',
-    timestamp: new Date().toISOString(),
-    mode: process.env.RUNWAY_API_KEY ? 'production' : 'demo',
-    storage: supabase ? 'supabase' : 'memory'
-  });
-});
-
-// Generate video - ALWAYS saves to database
-app.post('/api/generate/runway', async (req, res) => {
-  try {
-    const { prompt, settings = {} } = req.body;
-
-    if (!prompt) {
-      return res.status(400).json({ error: 'Prompt is required' });
-    }
-
-    console.log(`🎬 Generating video for: "${prompt}"`);
-    
-    const jobId = `video_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
-    jobs.set(jobId, {
-      id: jobId,
-      status: 'starting',
-      prompt: prompt,
-      provider: 'runway',
-      createdAt: new Date(),
-      progress: 0
-    });
-
-    // Start video generation (saves directly to database)
-    generateAndSaveVideoInfo(jobId, prompt, settings);
-
+// Debug endpoint to check API key
+app.get('/test-api', (req, res) => {
+    console.log('🔍 Testing API configuration...');
     res.json({
-      jobId: jobId,
-      status: 'started',
-      message: 'Video generation started'
+        hasRunwayKey: !!RUNWAY_API_KEY,
+        runwayKeyPreview: RUNWAY_API_KEY ? RUNWAY_API_KEY.substring(0, 15) + '...' : 'none',
+        hasSupabaseUrl: !!SUPABASE_URL,
+        hasSupabaseKey: !!SUPABASE_ANON_KEY,
+        timestamp: new Date().toISOString()
     });
-
-  } catch (error) {
-    console.error('❌ Generation error:', error);
-    res.status(500).json({ error: error.message });
-  }
 });
 
-// Video generation that saves metadata only (no file upload)
-async function generateAndSaveVideoInfo(jobId, prompt, settings) {
-  try {
-    console.log(`🚀 Processing video: ${jobId}`);
-    
-    jobs.set(jobId, {
-      ...jobs.get(jobId),
-      status: 'generating',
-      progress: 30
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+    res.json({ 
+        status: 'healthy', 
+        timestamp: new Date().toISOString(),
+        mode: RUNWAY_API_KEY ? 'production' : 'demo'
     });
-
-    // Simulate processing time
-    await new Promise(resolve => setTimeout(resolve, 3000));
-
-    // Use reliable video URL (no download needed)
-    const videoUrl = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
-    
-    jobs.set(jobId, {
-      ...jobs.get(jobId),
-      status: 'saving',
-      progress: 70
-    });
-
-    // Save directly to database (skip file storage)
-    if (supabase) {
-      try {
-        console.log(`💾 Saving to database: ${jobId}`);
-        
-        await saveVideoInfoToDatabase(jobId, prompt, videoUrl);
-        
-        console.log(`✅ Saved to database: ${jobId}`);
-        
-      } catch (saveError) {
-        console.error(`❌ Database save failed for ${jobId}:`, saveError);
-        throw saveError;
-      }
-    } else {
-      console.log(`⚠️ No Supabase - cannot save ${jobId}`);
-    }
-
-    // Complete job
-    jobs.set(jobId, {
-      ...jobs.get(jobId),
-      status: 'completed',
-      progress: 100,
-      videoUrl: videoUrl,
-      completedAt: new Date(),
-      metadata: {
-        provider: 'runway',
-        prompt: prompt,
-        duration: settings.duration || 5
-      }
-    });
-
-    console.log(`🎉 Video completed and saved: ${jobId}`);
-
-  } catch (error) {
-    console.error(`❌ Generation failed: ${jobId}`, error);
-    jobs.set(jobId, {
-      ...jobs.get(jobId),
-      status: 'failed',
-      error: error.message,
-      failedAt: new Date()
-    });
-  }
-}
-
-// Save video info directly to database (no file upload)
-async function saveVideoInfoToDatabase(jobId, prompt, videoUrl) {
-  try {
-    console.log(`📝 Inserting to database: ${jobId}`);
-    console.log(`📄 Prompt: ${prompt}`);
-    console.log(`🔗 Video URL: ${videoUrl}`);
-
-    // Save directly to database table
-    const { data, error } = await supabase
-      .from('videos')
-      .insert({
-        id: jobId,
-        prompt: prompt,
-        video_url: videoUrl,
-        created_at: new Date().toISOString()
-      })
-      .select(); // Return inserted data
-
-    if (error) {
-      console.error(`❌ Database insert error for ${jobId}:`, error);
-      throw new Error(`Database insert failed: ${error.message}`);
-    }
-
-    console.log(`✅ Database insert successful: ${jobId}`);
-    console.log(`📊 Inserted data:`, data);
-
-    return { success: true, data: data };
-
-  } catch (error) {
-    console.error(`❌ Database save error for ${jobId}:`, error);
-    throw error;
-  }
-}
-
-// Get job status
-app.get('/api/videos/status/:jobId', (req, res) => {
-  const job = jobs.get(req.params.jobId);
-  if (!job) {
-    return res.status(404).json({ error: 'Job not found' });
-  }
-  res.json(job);
 });
 
-// Get all videos from database
+// Get all videos
 app.get('/api/videos', async (req, res) => {
-  try {
-    if (!supabase) {
-      console.log('⚠️ No Supabase connection');
-      return res.json([]);
+    try {
+        console.log('📊 Fetching videos from database...');
+        
+        const { data, error } = await supabase
+            .from('videos')
+            .select('*')
+            .order('created_at', { ascending: false });
+
+        if (error) {
+            console.error('❌ Database error:', error);
+            throw error;
+        }
+
+        console.log(`📊 Found ${data.length} videos in database`);
+        res.json(data);
+    } catch (error) {
+        console.error('❌ Error fetching videos:', error);
+        res.status(500).json({ error: 'Failed to fetch videos' });
+    }
+});
+
+// Runway ML API functions
+async function callRunwayAPI(prompt) {
+    if (!RUNWAY_API_KEY) {
+        console.log('⚠️ No Runway API key - using demo mode');
+        return {
+            mode: 'demo',
+            video_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4'
+        };
     }
 
-    console.log('📊 Fetching videos from database...');
+    try {
+        console.log('🎬 Calling Runway ML API...');
+        console.log('🔑 API Key exists:', !!RUNWAY_API_KEY);
+        console.log('🔑 API Key preview:', RUNWAY_API_KEY.substring(0, 15) + '...');
+        console.log('📝 Prompt:', prompt);
 
-    const { data, error } = await supabase
-      .from('videos')
-      .select('*')
-      .order('created_at', { ascending: false })
-      .limit(50);
+        // Runway ML API call
+        const response = await axios.post('https://api.runwayml.com/v1/generate/video', {
+            prompt: prompt,
+            model: 'gen3a_turbo',
+            duration: 10,
+            ratio: '16:9'
+        }, {
+            headers: {
+                'Authorization': `Bearer ${RUNWAY_API_KEY}`,
+                'Content-Type': 'application/json'
+            },
+            timeout: 180000 // 3 minutes timeout
+        });
 
-    if (error) {
-      console.error('❌ Database query error:', error);
-      return res.json([]);
+        console.log('✅ Runway API response:', response.data);
+
+        // If Runway returns a task ID, we need to poll for completion
+        if (response.data.id) {
+            return await pollRunwayTask(response.data.id);
+        }
+
+        return {
+            mode: 'production',
+            video_url: response.data.output || response.data.video_url,
+            runway_response: response.data
+        };
+
+    } catch (error) {
+        console.error('❌ Runway API error:', error.response?.data || error.message);
+        
+        // If API fails, return demo but log the error
+        return {
+            mode: 'demo_fallback',
+            video_url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
+            error: error.message
+        };
+    }
+}
+
+// Poll Runway task until completion
+async function pollRunwayTask(taskId, maxAttempts = 30) {
+    console.log(`🔄 Polling Runway task: ${taskId}`);
+    
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+            const response = await axios.get(`https://api.runwayml.com/v1/tasks/${taskId}`, {
+                headers: {
+                    'Authorization': `Bearer ${RUNWAY_API_KEY}`,
+                    'Content-Type': 'application/json'
+                }
+            });
+
+            console.log(`🔄 Attempt ${attempt}: Status = ${response.data.status}`);
+
+            if (response.data.status === 'SUCCEEDED') {
+                console.log('✅ Video generation completed!');
+                return {
+                    mode: 'production',
+                    video_url: response.data.output[0]?.url || response.data.result?.url,
+                    runway_response: response.data
+                };
+            }
+
+            if (response.data.status === 'FAILED') {
+                console.error('❌ Runway task failed:', response.data.error);
+                throw new Error(`Task failed: ${response.data.error}`);
+            }
+
+            // Wait 5 seconds before next poll
+            await new Promise(resolve => setTimeout(resolve, 5000));
+
+        } catch (error) {
+            console.error(`❌ Polling error (attempt ${attempt}):`, error.message);
+            if (attempt === maxAttempts) {
+                throw error;
+            }
+        }
     }
 
-    console.log(`📊 Found ${data ? data.length : 0} videos in database`);
-    res.json(data || []);
+    throw new Error('Task polling timeout');
+}
 
-  } catch (error) {
-    console.error('❌ Failed to fetch videos:', error);
-    res.json([]);
-  }
-});
+// Generate video with Runway ML
+app.post('/api/generate/runway', async (req, res) => {
+    try {
+        const { prompt } = req.body;
+        
+        if (!prompt) {
+            return res.status(400).json({ error: 'Prompt is required' });
+        }
 
-// Get all jobs (for debugging)
-app.get('/api/videos/jobs', (req, res) => {
-  const allJobs = Array.from(jobs.values())
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-    .slice(0, 20);
-  res.json(allJobs);
-});
+        console.log('🚀 Starting video generation...');
+        console.log('📝 Prompt:', prompt);
 
-// Legacy endpoint
-app.post('/api/generate/luma', (req, res) => {
-  res.json({ error: 'Use /api/generate/runway endpoint' });
-});
+        // Call Runway API
+        const runwayResult = await callRunwayAPI(prompt);
+        
+        // Generate unique video ID
+        const videoId = `video_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+        
+        // Save to database
+        const videoData = {
+            id: videoId,
+            prompt: prompt,
+            video_url: runwayResult.video_url,
+            status: 'completed',
+            mode: runwayResult.mode,
+            created_at: new Date().toISOString()
+        };
 
-// 404 handler
-app.use('/api/*', (req, res) => {
-  res.status(404).json({
-    error: 'Endpoint not found',
-    path: req.path,
-    available: [
-      'GET /api/health',
-      'POST /api/generate/runway',
-      'GET /api/videos',
-      'GET /api/videos/status/:jobId'
-    ]
-  });
-});
+        console.log('💾 Saving to database:', videoData);
 
-// Error handler
-app.use((error, req, res, next) => {
-  console.error('Global error:', error);
-  res.status(500).json({
-    error: 'Server error',
-    message: process.env.NODE_ENV === 'development' ? error.message : 'Something went wrong'
-  });
-});
+        const { data, error } = await supabase
+            .from('videos')
+            .insert([videoData])
+            .select();
 
-// Cleanup old jobs
-setInterval(() => {
-  const cutoff = new Date(Date.now() - 24 * 60 * 60 * 1000);
-  for (const [jobId, job] of jobs.entries()) {
-    if (new Date(job.createdAt) < cutoff) {
-      jobs.delete(jobId);
+        if (error) {
+            console.error('❌ Database insert failed:', error);
+            throw error;
+        }
+
+        console.log('✅ Database insert successful:', data[0].id);
+        console.log('🔗 Video URL:', runwayResult.video_url);
+
+        res.json({
+            success: true,
+            video: data[0],
+            mode: runwayResult.mode,
+            message: runwayResult.mode === 'production' ? 
+                'Video generated successfully with Runway ML!' : 
+                'Demo mode - using sample video'
+        });
+
+    } catch (error) {
+        console.error('❌ Video generation failed:', error);
+        res.status(500).json({ 
+            error: 'Failed to generate video',
+            details: error.message 
+        });
     }
-  }
-  console.log(`🧹 Active jobs: ${jobs.size}`);
-}, 60 * 60 * 1000);
-
-const PORT = process.env.PORT || 3001;
-
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`🔑 Runway API: ${process.env.RUNWAY_API_KEY ? 'Configured' : 'Missing'}`);
-  console.log(`💾 Storage: ${supabase ? 'Database Connected' : 'No Database'}`);
-  console.log(`📝 Mode: Database-only (no file upload)`);
 });
 
-module.exports = app;
+// Delete video
+app.delete('/api/videos/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        
+        const { error } = await supabase
+            .from('videos')
+            .delete()
+            .eq('id', id);
+
+        if (error) {
+            throw error;
+        }
+
+        console.log('🗑️ Video deleted:', id);
+        res.json({ success: true, message: 'Video deleted successfully' });
+    } catch (error) {
+        console.error('❌ Delete failed:', error);
+        res.status(500).json({ error: 'Failed to delete video' });
+    }
+});
+
+// Start server
+app.listen(port, () => {
+    console.log(`🚀 Server running on port ${port}`);
+    console.log(`🔑 Runway API Key: ${RUNWAY_API_KEY ? '✅ Configured' : '❌ Missing'}`);
+    console.log(`🗄️ Supabase: ${SUPABASE_URL ? '✅ Configured' : '❌ Missing'}`);
+    console.log(`📺 Mode: ${RUNWAY_API_KEY ? 'PRODUCTION' : 'DEMO'}`);
+});
