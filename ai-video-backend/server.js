@@ -1,7 +1,6 @@
 const express = require('express');
 const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
-const fetch = require('node-fetch');
 
 const app = express();
 
@@ -16,8 +15,6 @@ if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY) {
 } else {
   console.log('⚠️ Supabase not configured');
 }
-
-const BUCKET_NAME = process.env.SUPABASE_BUCKET_NAME || 'ai-videos';
 
 // CORS
 const corsOptions = {
@@ -63,8 +60,7 @@ app.get('/api/health', (req, res) => {
     status: 'ok',
     timestamp: new Date().toISOString(),
     mode: process.env.RUNWAY_API_KEY ? 'production' : 'demo',
-    storage: supabase ? 'supabase' : 'memory',
-    bucket: BUCKET_NAME
+    storage: supabase ? 'supabase' : 'memory'
   });
 });
 
@@ -90,8 +86,8 @@ app.post('/api/generate/runway', async (req, res) => {
       progress: 0
     });
 
-    // Start video generation (always save to database)
-    generateAndSaveVideo(jobId, prompt, settings);
+    // Start video generation (saves directly to database)
+    generateAndSaveVideoInfo(jobId, prompt, settings);
 
     res.json({
       jobId: jobId,
@@ -105,43 +101,41 @@ app.post('/api/generate/runway', async (req, res) => {
   }
 });
 
-// Video generation that ALWAYS saves to database
-async function generateAndSaveVideo(jobId, prompt, settings) {
+// Video generation that saves metadata only (no file upload)
+async function generateAndSaveVideoInfo(jobId, prompt, settings) {
   try {
     console.log(`🚀 Processing video: ${jobId}`);
     
     jobs.set(jobId, {
       ...jobs.get(jobId),
       status: 'generating',
-      progress: 20
+      progress: 30
     });
 
-    // Use sample video URL (replace with real API when Runway key added)
-    const videoUrl = 'https://sample-videos.com/zip/10/mp4/SampleVideo_1280x720_1mb.mp4';
+    // Simulate processing time
+    await new Promise(resolve => setTimeout(resolve, 3000));
+
+    // Use reliable video URL (no download needed)
+    const videoUrl = 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4';
     
     jobs.set(jobId, {
       ...jobs.get(jobId),
-      status: 'processing',
+      status: 'saving',
       progress: 70
     });
 
-    let finalVideoUrl = videoUrl;
-    let filename = null;
-
-    // ALWAYS try to save to Supabase
+    // Save directly to database (skip file storage)
     if (supabase) {
       try {
         console.log(`💾 Saving to database: ${jobId}`);
         
-        const uploadResult = await uploadAndSaveVideo(videoUrl, jobId, prompt);
-        finalVideoUrl = uploadResult.publicUrl;
-        filename = uploadResult.filename;
+        await saveVideoInfoToDatabase(jobId, prompt, videoUrl);
         
-        console.log(`✅ Saved to Supabase: ${jobId}`);
+        console.log(`✅ Saved to database: ${jobId}`);
         
       } catch (saveError) {
-        console.error(`❌ Save failed for ${jobId}:`, saveError);
-        // Continue with original URL if save fails
+        console.error(`❌ Database save failed for ${jobId}:`, saveError);
+        throw saveError;
       }
     } else {
       console.log(`⚠️ No Supabase - cannot save ${jobId}`);
@@ -152,8 +146,7 @@ async function generateAndSaveVideo(jobId, prompt, settings) {
       ...jobs.get(jobId),
       status: 'completed',
       progress: 100,
-      videoUrl: finalVideoUrl,
-      filename: filename,
+      videoUrl: videoUrl,
       completedAt: new Date(),
       metadata: {
         provider: 'runway',
@@ -162,7 +155,7 @@ async function generateAndSaveVideo(jobId, prompt, settings) {
       }
     });
 
-    console.log(`🎉 Video completed: ${jobId}`);
+    console.log(`🎉 Video completed and saved: ${jobId}`);
 
   } catch (error) {
     console.error(`❌ Generation failed: ${jobId}`, error);
@@ -175,65 +168,36 @@ async function generateAndSaveVideo(jobId, prompt, settings) {
   }
 }
 
-// Upload video and save to database
-async function uploadAndSaveVideo(videoUrl, jobId, prompt) {
+// Save video info directly to database (no file upload)
+async function saveVideoInfoToDatabase(jobId, prompt, videoUrl) {
   try {
-    console.log(`📁 Uploading video: ${jobId}`);
-
-    // Download video
-    const response = await fetch(videoUrl);
-    if (!response.ok) {
-      throw new Error(`Download failed: ${response.status}`);
-    }
-
-    const videoBuffer = await response.buffer();
-    const filename = `${jobId}.mp4`;
-    const filePath = `videos/${filename}`;
-
-    // Upload to storage
-    const { data, error } = await supabase.storage
-      .from(BUCKET_NAME)
-      .upload(filePath, videoBuffer, {
-        contentType: 'video/mp4',
-        upsert: false
-      });
-
-    if (error) {
-      throw new Error(`Storage upload error: ${error.message}`);
-    }
-
-    // Get public URL
-    const { data: urlData } = supabase.storage
-      .from(BUCKET_NAME)
-      .getPublicUrl(filePath);
-
     console.log(`📝 Inserting to database: ${jobId}`);
+    console.log(`📄 Prompt: ${prompt}`);
+    console.log(`🔗 Video URL: ${videoUrl}`);
 
-    // Save to database - ALWAYS
-    const { data: insertData, error: insertError } = await supabase
+    // Save directly to database table
+    const { data, error } = await supabase
       .from('videos')
       .insert({
         id: jobId,
         prompt: prompt,
-        video_url: urlData.publicUrl,
+        video_url: videoUrl,
         created_at: new Date().toISOString()
-      });
+      })
+      .select(); // Return inserted data
 
-    if (insertError) {
-      console.error(`❌ Database insert error for ${jobId}:`, insertError);
-      throw new Error(`Database insert failed: ${insertError.message}`);
+    if (error) {
+      console.error(`❌ Database insert error for ${jobId}:`, error);
+      throw new Error(`Database insert failed: ${error.message}`);
     }
 
     console.log(`✅ Database insert successful: ${jobId}`);
+    console.log(`📊 Inserted data:`, data);
 
-    return {
-      publicUrl: urlData.publicUrl,
-      filename: filename,
-      path: filePath
-    };
+    return { success: true, data: data };
 
   } catch (error) {
-    console.error(`❌ Upload/save error for ${jobId}:`, error);
+    console.error(`❌ Database save error for ${jobId}:`, error);
     throw error;
   }
 }
@@ -329,9 +293,8 @@ const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
   console.log(`🔑 Runway API: ${process.env.RUNWAY_API_KEY ? 'Configured' : 'Missing'}`);
-  console.log(`💾 Storage: ${supabase ? 'Supabase Connected' : 'No Database'}`);
-  console.log(`📁 Bucket: ${BUCKET_NAME}`);
-  console.log(`📝 Mode: Always save to database`);
+  console.log(`💾 Storage: ${supabase ? 'Database Connected' : 'No Database'}`);
+  console.log(`📝 Mode: Database-only (no file upload)`);
 });
 
 module.exports = app;
