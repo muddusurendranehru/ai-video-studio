@@ -17,25 +17,16 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 app.use(cors());
 app.use(express.json());
 
-// Multiple sample videos to rotate instead of Big Buck Bunny
-const SAMPLE_VIDEOS = [
-    'https://sample-videos.com/zip/10/mp4/720/SampleVideo_1280x720_1mb.mp4',
-    'https://www.learningcontainer.com/wp-content/uploads/2020/05/sample-mp4-file.mp4',
-    'https://file-examples.com/storage/fe68c1acc61bb40bb3b26ae/2017/10/file_example_MP4_1920_18MG.mp4',
-    'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4',
-    'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4'
-];
-
-// Debug endpoint to check API key
+// Comprehensive debug endpoint
 app.get('/test-api', (req, res) => {
-    console.log('🔍 Testing API configuration...');
     res.json({
         hasRunwayKey: !!RUNWAY_API_KEY,
         runwayKeyPreview: RUNWAY_API_KEY ? RUNWAY_API_KEY.substring(0, 15) + '...' : 'none',
+        runwayKeyLength: RUNWAY_API_KEY ? RUNWAY_API_KEY.length : 0,
         hasSupabaseUrl: !!SUPABASE_URL,
         hasSupabaseKey: !!SUPABASE_ANON_KEY,
-        runwayKeyLength: RUNWAY_API_KEY ? RUNWAY_API_KEY.length : 0,
-        forcedMode: 'PRODUCTION_ONLY',
+        apiVersion: '2024-11-06',
+        mode: 'COMPREHENSIVE_SOLUTION',
         timestamp: new Date().toISOString()
     });
 });
@@ -43,10 +34,10 @@ app.get('/test-api', (req, res) => {
 // Health check endpoint
 app.get('/api/health', (req, res) => {
     res.json({ 
-        status: 'healthy', 
-        timestamp: new Date().toISOString(),
-        mode: 'FORCED_PRODUCTION',
-        runwayStatus: RUNWAY_API_KEY ? 'API_KEY_LOADED' : 'API_KEY_MISSING'
+        status: 'healthy',
+        runway: RUNWAY_API_KEY ? 'configured' : 'missing',
+        supabase: SUPABASE_URL ? 'configured' : 'missing',
+        timestamp: new Date().toISOString()
     });
 });
 
@@ -60,10 +51,7 @@ app.get('/api/videos', async (req, res) => {
             .select('*')
             .order('created_at', { ascending: false });
 
-        if (error) {
-            console.error('❌ Database error:', error);
-            throw error;
-        }
+        if (error) throw error;
 
         console.log(`📊 Found ${data.length} videos in database`);
         res.json(data);
@@ -73,170 +61,159 @@ app.get('/api/videos', async (req, res) => {
     }
 });
 
-// FORCED Runway ML API call - NO DEMO MODE FALLBACK
+// Comprehensive Runway ML API integration
 async function callRunwayAPI(prompt) {
-    console.log('🚀 FORCED PRODUCTION MODE - NO DEMO FALLBACK');
-    console.log('🔑 API Key Status:', RUNWAY_API_KEY ? 'EXISTS' : 'MISSING');
-    console.log('🔑 API Key Length:', RUNWAY_API_KEY ? RUNWAY_API_KEY.length : 0);
-    console.log('🔑 API Key Preview:', RUNWAY_API_KEY ? RUNWAY_API_KEY.substring(0, 20) + '...' : 'none');
-    console.log('📝 Prompt:', prompt);
-
     if (!RUNWAY_API_KEY) {
-        console.error('❌ CRITICAL: NO RUNWAY API KEY - CANNOT PROCEED');
-        throw new Error('Runway API key is required for production mode');
+        throw new Error('Runway API key is required');
     }
 
+    console.log('🚀 COMPREHENSIVE RUNWAY ML INTEGRATION');
+    console.log('🔑 API Key Status: LOADED');
+    console.log('🔑 API Key Length:', RUNWAY_API_KEY.length);
+    console.log('📝 Prompt:', prompt);
+    console.log('🎯 Target: Real AI video generation');
+
+    // Step 1: Create video generation task
     try {
-        console.log('🎬 Making REAL Runway ML API call...');
+        console.log('📡 Making request to Runway ML API...');
         
-        // First try: Generate video
-        const generateResponse = await fetch('https://api.dev.runwayml.com/v1/generate/video', {
+        // Try image-to-video with minimal starter image (common pattern for text-to-video)
+        const response = await fetch('https://api.dev.runwayml.com/v1/image_to_video', {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${RUNWAY_API_KEY}`,
                 'Content-Type': 'application/json',
-                'Accept': 'application/json',
                 'X-Runway-Version': '2024-11-06'
             },
             body: JSON.stringify({
-                prompt: prompt,
-                model: 'gen3a_turbo',
-                duration: 10,
-                ratio: '16:9'
+                model: 'gen4_turbo',
+                promptText: prompt,
+                // Use a simple white background for text-to-video effect
+                promptImage: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==',
+                duration: 5,
+                ratio: '1280:720'
             })
         });
 
-        console.log('📡 Runway API Response Status:', generateResponse.status);
-        console.log('📡 Runway API Response Headers:', Object.fromEntries(generateResponse.headers.entries()));
+        console.log('📡 Response Status:', response.status);
+        console.log('📡 Response Headers:', Object.fromEntries(response.headers.entries()));
 
-        if (!generateResponse.ok) {
-            const errorText = await generateResponse.text();
-            console.error('❌ Runway API Error Response:', errorText);
-            throw new Error(`Runway API HTTP ${generateResponse.status}: ${errorText}`);
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('❌ API Error Response:', errorText);
+            throw new Error(`HTTP ${response.status}: ${errorText}`);
         }
 
-        const generateData = await generateResponse.json();
-        console.log('✅ Runway Generate Response:', JSON.stringify(generateData, null, 2));
+        const data = await response.json();
+        console.log('✅ Task Created:', JSON.stringify(data, null, 2));
 
-        // If we get a task ID, poll for completion
-        if (generateData.id || generateData.task_id) {
-            const taskId = generateData.id || generateData.task_id;
-            console.log('🔄 Got task ID, starting polling:', taskId);
-            return await pollRunwayTask(taskId);
+        // Step 2: Poll for completion
+        if (data.id) {
+            return await pollTaskCompletion(data.id);
+        } else {
+            throw new Error('No task ID received from Runway API');
         }
-
-        // If we get direct video URL
-        if (generateData.output || generateData.video_url || generateData.url) {
-            const videoUrl = generateData.output || generateData.video_url || generateData.url;
-            console.log('✅ Got direct video URL:', videoUrl);
-            return {
-                mode: 'production',
-                video_url: videoUrl,
-                runway_response: generateData
-            };
-        }
-
-        console.error('❌ Unexpected Runway response format:', generateData);
-        throw new Error('Runway API returned unexpected response format');
 
     } catch (error) {
-        console.error('❌ RUNWAY API CALL FAILED:', error.message);
-        console.error('❌ Full error:', error);
-        
-        // ABSOLUTE LAST RESORT: Use rotating sample videos (NOT Big Buck Bunny)
-        const randomIndex = Math.floor(Math.random() * SAMPLE_VIDEOS.length);
-        const fallbackVideo = SAMPLE_VIDEOS[randomIndex];
-        
-        console.log('🆘 EMERGENCY FALLBACK - Using sample video:', fallbackVideo);
-        
-        return {
-            mode: 'emergency_fallback',
-            video_url: fallbackVideo,
-            error: error.message,
-            runway_response: null
-        };
+        console.error('❌ Runway API call failed:', error.message);
+        throw error;
     }
 }
 
-// Poll Runway task until completion
-async function pollRunwayTask(taskId, maxAttempts = 60) {
-    console.log(`🔄 Polling Runway task: ${taskId} (max ${maxAttempts} attempts)`);
+// Comprehensive task polling with exponential backoff
+async function pollTaskCompletion(taskId, maxAttempts = 40) {
+    console.log(`🔄 Polling task: ${taskId}`);
     
     for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         try {
-            console.log(`🔄 Polling attempt ${attempt}/${maxAttempts}...`);
+            console.log(`📡 Polling attempt ${attempt}/${maxAttempts}`);
             
             const response = await fetch(`https://api.dev.runwayml.com/v1/tasks/${taskId}`, {
                 method: 'GET',
                 headers: {
                     'Authorization': `Bearer ${RUNWAY_API_KEY}`,
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json',
                     'X-Runway-Version': '2024-11-06'
                 }
             });
 
-            console.log(`📡 Polling Response Status: ${response.status}`);
-
             if (!response.ok) {
                 const errorText = await response.text();
-                console.error(`❌ Polling HTTP Error: ${response.status} - ${errorText}`);
-                throw new Error(`HTTP ${response.status}: ${errorText}`);
+                console.error(`❌ Polling failed: ${response.status} - ${errorText}`);
+                throw new Error(`Polling failed: HTTP ${response.status}`);
             }
 
-            const data = await response.json();
-            console.log(`🔄 Task Status: ${data.status} (attempt ${attempt})`);
-            console.log(`📊 Full task data:`, JSON.stringify(data, null, 2));
+            const taskData = await response.json();
+            console.log(`📊 Task Status: ${taskData.status}`);
+            console.log(`📊 Task Progress:`, taskData.progress || 'N/A');
 
-            if (data.status === 'SUCCEEDED' || data.status === 'completed') {
-                console.log('✅ Video generation completed!');
-                
-                // Try multiple possible video URL locations
-                const videoUrl = data.output?.[0]?.url || 
-                               data.output?.url || 
-                               data.result?.url || 
-                               data.video_url ||
-                               data.url;
-                
-                if (!videoUrl) {
-                    console.error('❌ No video URL found in completed task:', data);
-                    throw new Error('Task completed but no video URL found');
-                }
-                
-                console.log('🎉 Final video URL:', videoUrl);
-                return {
-                    mode: 'production',
-                    video_url: videoUrl,
-                    runway_response: data
-                };
+            // Handle different task statuses
+            switch (taskData.status) {
+                case 'SUCCEEDED':
+                    console.log('✅ Video generation completed!');
+                    
+                    // Find the video URL in the response
+                    let videoUrl = null;
+                    if (taskData.output && taskData.output.length > 0) {
+                        videoUrl = taskData.output[0].url || taskData.output[0];
+                    } else if (taskData.result && taskData.result.url) {
+                        videoUrl = taskData.result.url;
+                    } else if (taskData.artifacts && taskData.artifacts.length > 0) {
+                        videoUrl = taskData.artifacts[0].url;
+                    }
+
+                    if (!videoUrl) {
+                        console.error('❌ No video URL found in completed task');
+                        throw new Error('Task completed but no video URL found');
+                    }
+
+                    console.log('🎉 Final video URL:', videoUrl);
+                    return {
+                        mode: 'production',
+                        video_url: videoUrl,
+                        runway_response: taskData
+                    };
+
+                case 'FAILED':
+                    console.error('❌ Task failed:', taskData.error || taskData.failure_reason);
+                    throw new Error(`Task failed: ${taskData.error || taskData.failure_reason || 'Unknown error'}`);
+
+                case 'CANCELLED':
+                case 'CANCELED':
+                    throw new Error('Task was cancelled');
+
+                case 'PENDING':
+                case 'PROCESSING':
+                case 'THROTTLED':
+                    // Continue polling
+                    break;
+
+                default:
+                    console.log(`⏳ Unknown status: ${taskData.status}, continuing to poll...`);
             }
 
-            if (data.status === 'FAILED' || data.status === 'failed') {
-                console.error('❌ Runway task failed:', data.error || data.failure_reason);
-                throw new Error(`Task failed: ${data.error || data.failure_reason || 'Unknown error'}`);
-            }
-
-            // Still processing - wait before next attempt
-            const waitTime = Math.min(5000 + (attempt * 1000), 15000); // Progressive backoff
-            console.log(`⏳ Task still processing, waiting ${waitTime}ms...`);
+            // Exponential backoff: start at 3s, increase by 1s each attempt, max 15s
+            const waitTime = Math.min(3000 + (attempt * 1000), 15000);
+            console.log(`⏳ Waiting ${waitTime}ms before next poll...`);
             await new Promise(resolve => setTimeout(resolve, waitTime));
 
         } catch (error) {
             console.error(`❌ Polling error (attempt ${attempt}):`, error.message);
+            
             if (attempt === maxAttempts) {
-                console.error('❌ Max polling attempts reached, giving up');
                 throw new Error(`Polling timeout after ${maxAttempts} attempts: ${error.message}`);
             }
             
-            // Wait before retry
-            await new Promise(resolve => setTimeout(resolve, 3000));
+            // Brief wait before retry
+            await new Promise(resolve => setTimeout(resolve, 2000));
         }
     }
+
+    throw new Error(`Task polling timeout after ${maxAttempts} attempts`);
 }
 
-// Generate video with FORCED Runway ML (NO DEMO)
+// Generate video with comprehensive error handling
 app.post('/api/generate/runway', async (req, res) => {
-    console.log('🚨 STARTING FORCED PRODUCTION VIDEO GENERATION 🚨');
+    const startTime = Date.now();
     
     try {
         const { prompt } = req.body;
@@ -245,10 +222,19 @@ app.post('/api/generate/runway', async (req, res) => {
             return res.status(400).json({ error: 'Prompt is required' });
         }
 
-        console.log('📝 Received prompt:', prompt);
-        console.log('🔑 API Key check:', RUNWAY_API_KEY ? 'EXISTS' : 'MISSING');
+        if (!RUNWAY_API_KEY) {
+            return res.status(500).json({ 
+                error: 'Runway API key not configured',
+                details: 'Server configuration error'
+            });
+        }
 
-        // FORCE call to Runway API - NO DEMO MODE
+        console.log('🚨 STARTING COMPREHENSIVE VIDEO GENERATION 🚨');
+        console.log('📝 Prompt:', prompt);
+        console.log('🔑 API Key: LOADED');
+        console.log('⏰ Start time:', new Date().toISOString());
+
+        // Call Runway API with comprehensive error handling
         const runwayResult = await callRunwayAPI(prompt);
         
         // Generate unique video ID
@@ -261,6 +247,7 @@ app.post('/api/generate/runway', async (req, res) => {
             video_url: runwayResult.video_url,
             status: 'completed',
             mode: runwayResult.mode,
+            processing_time: Date.now() - startTime,
             created_at: new Date().toISOString()
         };
 
@@ -272,38 +259,43 @@ app.post('/api/generate/runway', async (req, res) => {
             .select();
 
         if (error) {
-            console.error('❌ Database insert failed:', error);
+            console.error('❌ Database error:', error);
             throw error;
         }
 
-        console.log('✅ Database insert successful:', data[0].id);
-        console.log('🔗 Final Video URL:', runwayResult.video_url);
-        console.log('📊 Mode:', runwayResult.mode);
+        console.log('✅ SUCCESS! Video generated and saved');
+        console.log('📊 Processing time:', Date.now() - startTime, 'ms');
+        console.log('🔗 Video URL:', runwayResult.video_url);
 
         res.json({
             success: true,
             video: data[0],
             mode: runwayResult.mode,
-            message: runwayResult.mode === 'production' ? 
-                '✅ Video generated successfully with Runway ML!' : 
-                `⚠️ Fallback mode used: ${runwayResult.mode}`,
-            debug: {
-                apiKeyExists: !!RUNWAY_API_KEY,
-                videoUrl: runwayResult.video_url,
-                actualMode: runwayResult.mode
-            }
+            processing_time: Date.now() - startTime,
+            message: '🎉 Video generated successfully with Runway ML!'
         });
 
     } catch (error) {
-        console.error('❌ Video generation failed:', error);
-        console.error('❌ Error stack:', error.stack);
+        const processingTime = Date.now() - startTime;
+        console.error('❌ COMPREHENSIVE ERROR:', error.message);
+        console.error('❌ Processing time:', processingTime, 'ms');
+        console.error('❌ Full error:', error.stack);
         
-        res.status(500).json({ 
-            error: 'Failed to generate video',
+        // Determine appropriate HTTP status code
+        let statusCode = 500;
+        if (error.message.includes('HTTP 400')) statusCode = 400;
+        if (error.message.includes('HTTP 401')) statusCode = 401;
+        if (error.message.includes('HTTP 402')) statusCode = 402;
+        if (error.message.includes('HTTP 429')) statusCode = 429;
+        
+        res.status(statusCode).json({ 
+            error: 'Video generation failed',
             details: error.message,
+            processing_time: processingTime,
             debug: {
                 apiKeyExists: !!RUNWAY_API_KEY,
-                timestamp: new Date().toISOString()
+                timestamp: new Date().toISOString(),
+                errorType: error.constructor.name
             }
         });
     }
@@ -319,12 +311,10 @@ app.delete('/api/videos/:id', async (req, res) => {
             .delete()
             .eq('id', id);
 
-        if (error) {
-            throw error;
-        }
+        if (error) throw error;
 
         console.log('🗑️ Video deleted:', id);
-        res.json({ success: true, message: 'Video deleted successfully' });
+        res.json({ success: true });
     } catch (error) {
         console.error('❌ Delete failed:', error);
         res.status(500).json({ error: 'Failed to delete video' });
@@ -333,10 +323,15 @@ app.delete('/api/videos/:id', async (req, res) => {
 
 // Start server
 app.listen(port, () => {
-    console.log(`🚀 Server running on port ${port}`);
-    console.log(`🔑 Runway API Key: ${RUNWAY_API_KEY ? '✅ LOADED' : '❌ MISSING'}`);
-    console.log(`🔑 API Key Length: ${RUNWAY_API_KEY ? RUNWAY_API_KEY.length : 0}`);
-    console.log(`🗄️ Supabase: ${SUPABASE_URL ? '✅ Configured' : '❌ Missing'}`);
-    console.log(`📺 Mode: FORCED PRODUCTION - NO DEMO FALLBACK`);
-    console.log(`🚫 Big Buck Bunny: BANNED FOREVER`);
+    console.log('🚀 ═══════════════════════════════════════');
+    console.log('🚀 COMPREHENSIVE RUNWAY ML SERVER READY');
+    console.log('🚀 ═══════════════════════════════════════');
+    console.log(`🌐 Server: http://localhost:${port}`);
+    console.log(`🔑 Runway API: ${RUNWAY_API_KEY ? '✅ CONFIGURED' : '❌ MISSING'}`);
+    console.log(`🗄️ Supabase: ${SUPABASE_URL ? '✅ CONFIGURED' : '❌ MISSING'}`);
+    console.log(`📺 Mode: PRODUCTION ONLY - NO FALLBACKS`);
+    console.log(`📚 API Version: 2024-11-06`);
+    console.log(`🎯 Endpoint: /v1/image_to_video (text-to-video)`);
+    console.log(`⚡ Model: gen4_turbo (latest)`);
+    console.log('🚀 ═══════════════════════════════════════');
 });
