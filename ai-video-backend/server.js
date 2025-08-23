@@ -90,7 +90,7 @@ async function callRunwayAPI(prompt) {
         console.log('🎬 Making REAL Runway ML API call...');
         
         // First try: Generate video
-        const generateResponse = await fetch('https://api.runwayml.com/v1/generate/video', {
+        const generateResponse = await fetch('https://api.dev.runwayml.com/v1/generate/video', {
             method: 'POST',
             headers: {
                 'Authorization': `Bearer ${RUNWAY_API_KEY}`,
@@ -165,7 +165,7 @@ async function pollRunwayTask(taskId, maxAttempts = 60) {
         try {
             console.log(`🔄 Polling attempt ${attempt}/${maxAttempts}...`);
             
-            const response = await fetch(`https://api.runwayml.com/v1/tasks/${taskId}`, {
+            const response = await fetch(`https://api.dev.runwayml.com/v1/tasks/${taskId}`, {
                 method: 'GET',
                 headers: {
                     'Authorization': `Bearer ${RUNWAY_API_KEY}`,
