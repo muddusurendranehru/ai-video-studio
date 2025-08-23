@@ -95,7 +95,8 @@ async function callRunwayAPI(prompt) {
             headers: {
                 'Authorization': `Bearer ${RUNWAY_API_KEY}`,
                 'Content-Type': 'application/json',
-                'Accept': 'application/json'
+                'Accept': 'application/json',
+                'X-Runway-Version': '2024-11-06'
             },
             body: JSON.stringify({
                 prompt: prompt,
@@ -170,7 +171,8 @@ async function pollRunwayTask(taskId, maxAttempts = 60) {
                 headers: {
                     'Authorization': `Bearer ${RUNWAY_API_KEY}`,
                     'Content-Type': 'application/json',
-                    'Accept': 'application/json'
+                    'Accept': 'application/json',
+                    'X-Runway-Version': '2024-11-06'
                 }
             });
 
