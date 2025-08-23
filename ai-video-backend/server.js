@@ -162,8 +162,8 @@ app.post('/generate-video', async (req, res) => {
     const runwayData = {
       model: 'gen4_turbo',
       promptText: prompt,
-      duration: duration,
-      ratio: '16:9'
+      durationSeconds: duration,
+      aspectRatio: '16:9'
     };
 
     const result = await callRunwayAPI('tasks', runwayData);
